@@ -1,0 +1,42 @@
+logs/
+artifacts/
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+dist/
+build/
+.coverage
+.pytest_cache/
+.mypy_cache/
+.DS_Store
+Thumbs.db
+.env
+.env.*
+
+# === SECRETS — never commit these ===
+*.key
+*.pem
+*.p12
+*.pfx
+credentials.json
+secrets.json
+config.local.json
+*_secret*
+*_private*
+api_keys.*
+
+# === Windows ===
+desktop.ini
+$RECYCLE.BIN/
+
+# === IDE ===
+.vscode/
+.idea/
+
+# === Logs and temp ===
+*.log
+*.tmp
+temp/
+scratch/
