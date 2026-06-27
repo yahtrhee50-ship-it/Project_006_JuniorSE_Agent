@@ -1,98 +1,112 @@
 """
 AISC section database query module.
 All values are imperial units: in, in², in³, in⁴, kip/ft.
-Source: AISC Shapes Database v16.0
+Sources:
+  Modern:     AISC Shapes Database v16.0   (2,299 sections)
+  Historical: AISC Shapes Database v16.0H  (18,877 sections, includes pre-1950 shapes)
 """
 import json
 from pathlib import Path
 from typing import Optional
 
-_DB_PATH = Path(__file__).parent.parent.parent / "data" / "AISC" / "sections_v16.json"
+_DATA_DIR = Path(__file__).parent.parent.parent / "data" / "AISC"
+_DB_PATHS = {
+    "modern":     _DATA_DIR / "sections_v16.json",
+    "historical": _DATA_DIR / "sections_v16h.json",
+}
 
-# Loaded once on first access, keyed by uppercase label (e.g. "W16X40")
-_db: dict[str, dict] = {}
+# Each database loaded once on first access, keyed by uppercase label
+_dbs: dict[str, dict[str, dict]] = {"modern": {}, "historical": {}}
 
 
-def _load() -> None:
-    if _db:
+def _load(db: str) -> None:
+    if _dbs[db]:
         return
-    with open(_DB_PATH, encoding="utf-8") as f:
+    with open(_DB_PATHS[db], encoding="utf-8") as f:
         records = json.load(f)
     for r in records:
         label = r.get("AISC_Manual_Label")
         if label:
-            _db[label.upper()] = r
+            _dbs[db][label.upper()] = r
 
 
-def get_section(label: str) -> dict:
+def get_section(label: str, historical: bool = False) -> dict:
     """Return section property dict for an AISC designation.
 
     Args:
-        label: AISC designation, e.g. 'W16X40' (case-insensitive)
+        label:      AISC designation, e.g. 'W16X40' (case-insensitive)
+        historical: if True, search the v16.0H historical database instead
 
     Returns:
         Dict with keys: Type, AISC_Manual_Label, W, A, d, tw, bf, tf, kdes,
-        Ix, Zx, Sx, rx, Iy, Zy, Sy, ry, J, Cw, bf/2tf, h/tw
+        OD, ID, tnom, tdes, Ix, Zx, Sx, rx, Iy, Zy, Sy, ry, J, Cw,
+        bf/2tf, h/tw, D/t  (None for fields not applicable to the section type)
 
     Raises:
-        ValueError: if the designation is not found in the database
+        ValueError: if the designation is not found
     """
-    _load()
+    db = "historical" if historical else "modern"
+    _load(db)
     key = label.strip().upper()
-    if key not in _db:
+    if key not in _dbs[db]:
+        which = "v16.0H historical" if historical else "v16.0 modern"
         raise ValueError(
-            f"Section '{label}' not found in AISC v16.0 database. "
-            f"Check designation (e.g. 'W16X40', 'HSS6X6X0.500')."
+            f"Section '{label}' not found in AISC {which} database. "
+            f"Check designation (e.g. 'W16X40', 'PIPE6STD', 'B18.5X64' for historical)."
         )
-    return _db[key]
+    return _dbs[db][key]
 
 
-def list_sections(section_type: Optional[str] = None) -> list[str]:
+def list_sections(section_type: Optional[str] = None, historical: bool = False) -> list[str]:
     """Return sorted list of AISC_Manual_Label values.
 
     Args:
-        section_type: filter by type code, e.g. 'W', 'HSS', 'C', 'L'.
+        section_type: filter by type code, e.g. 'W', 'HSS', 'C', 'L', 'PIPE'.
                       If None, returns all sections.
+        historical:   if True, search the v16.0H historical database
     """
-    _load()
+    db = "historical" if historical else "modern"
+    _load(db)
     if section_type:
         t = section_type.upper()
         return sorted(
-            label for label, r in _db.items() if r.get("Type", "").upper() == t
+            label for label, r in _dbs[db].items()
+            if (r.get("Type") or "").upper() == t
         )
-    return sorted(_db.keys())
+    return sorted(_dbs[db].keys())
 
 
-def list_types() -> list[str]:
+def list_types(historical: bool = False) -> list[str]:
     """Return sorted list of unique section type codes in the database."""
-    _load()
-    return sorted({r.get("Type", "") for r in _db.values() if r.get("Type")})
+    db = "historical" if historical else "modern"
+    _load(db)
+    return sorted({r.get("Type", "") for r in _dbs[db].values() if r.get("Type")})
 
 
-def find_lightest_W(min_Zx_in3: float) -> dict:
+def find_lightest_W(min_Zx_in3: float, historical: bool = False) -> dict:
     """Return lightest W-shape with plastic section modulus Zx >= min_Zx_in3.
-
-    Useful for initial beam sizing: call with required Zx, get lightest
-    adequate section.
 
     Args:
         min_Zx_in3: minimum required Zx (in³)
+        historical:  if True, search the v16.0H historical database
 
     Returns:
         Section property dict for the lightest qualifying W-shape.
 
     Raises:
-        ValueError: if no W-shape in the database meets the requirement.
+        ValueError: if no qualifying W-shape exists in the database.
     """
-    _load()
+    db = "historical" if historical else "modern"
+    _load(db)
     candidates = [
-        r for r in _db.values()
+        r for r in _dbs[db].values()
         if r.get("Type") == "W"
         and isinstance(r.get("Zx"), (int, float))
         and r["Zx"] >= min_Zx_in3
     ]
     if not candidates:
         raise ValueError(
-            f"No W-shape in AISC v16.0 database has Zx >= {min_Zx_in3:.1f} in³."
+            f"No W-shape in AISC {'v16.0H' if historical else 'v16.0'} "
+            f"database has Zx >= {min_Zx_in3:.1f} in³."
         )
     return min(candidates, key=lambda r: r["W"])
