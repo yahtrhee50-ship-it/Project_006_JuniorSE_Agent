@@ -1,0 +1,20 @@
+{
+  "project": "PROJECT_NAME",
+  "risk_category": "II",
+  "steel_grade": "A992",
+  "concrete_fc_psi": 4000,
+  "location": "CITY, STATE",
+  "codes": {
+    "steel": "AISC360-22",
+    "loads": "ASCE7-22",
+    "concrete": "ACI318-19"
+  },
+  "loads_psf": {
+    "DL_roof": null,
+    "DL_floor": null,
+    "LL_roof": null,
+    "LL_floor": null,
+    "SDL": null
+  },
+  "notes": ""
+}
