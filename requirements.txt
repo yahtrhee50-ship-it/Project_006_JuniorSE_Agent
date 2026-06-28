@@ -1,0 +1,10 @@
+# Junior SE Agent — Python dependencies
+# Install: C:\Python314\python.exe -m pip install -r requirements.txt
+
+mcp           # MCP Python SDK (FastMCP server)
+numpy         # matrix stiffness solver (beam_stiffness.py)
+openpyxl      # AISC Excel -> JSON conversion (data/AISC/convert_aisc.py)
+pytest        # test suite
+
+# Deferred (future SAP2000 / Project_005 HTTP bridge — out of scope this phase):
+# requests

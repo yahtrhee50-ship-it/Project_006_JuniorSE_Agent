@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "junior-se": {
+      "command": "C:\\Python314\\python.exe",
+      "args": ["D:\\AI_TEST\\Agent_Developer\\Project_006_JuniorSE_Agent\\src\\mcp_server.py"]
+    }
+  }
+}
