@@ -59,6 +59,45 @@ def pick_color(used_pct: float) -> str:
     return RED
 
 
+def find_transcript(data: dict) -> str:
+    """Locate the session transcript.
+
+    Claude Code sometimes sends an empty transcript_path in the statusline
+    payload, so fall back to the project's transcript directory under
+    ~/.claude/projects/<sanitized-cwd>/ and pick the most recently modified
+    .jsonl file (the active session).
+    """
+    tp = data.get("transcript_path") or ""
+    if tp and os.path.exists(tp):
+        return tp
+
+    import glob
+    home = os.path.expanduser("~")
+    projects = os.path.join(home, ".claude", "projects")
+
+    candidates = []
+    cwd = data.get("cwd") or (data.get("workspace") or {}).get("current_dir") or ""
+    if cwd:
+        # Claude sanitizes the cwd to a folder name by replacing every
+        # non-alphanumeric character with a dash.
+        import re
+        sanitized = re.sub(r"[^A-Za-z0-9]", "-", cwd)
+        proj_dir = os.path.join(projects, sanitized)
+        if os.path.isdir(proj_dir):
+            candidates = glob.glob(os.path.join(proj_dir, "*.jsonl"))
+
+    if not candidates:
+        # Last resort: newest transcript across all projects.
+        candidates = glob.glob(os.path.join(projects, "*", "*.jsonl"))
+
+    if not candidates:
+        return ""
+    try:
+        return max(candidates, key=os.path.getmtime)
+    except Exception:
+        return candidates[0]
+
+
 def context_used_tokens(transcript_path: str):
     """Return the token count in context from the latest assistant usage entry.
 
@@ -129,7 +168,9 @@ def main() -> None:
     used_pct = (data.get("context_window") or {}).get("used_percentage")
 
     if used_pct is None:
-        used = context_used_tokens(data.get("transcript_path"))
+        tpath = find_transcript(data)
+        _log(f"resolved transcript={tpath!r}")
+        used = context_used_tokens(tpath)
         if used is not None:
             limit = 1_000_000 if data.get("exceeds_200k_tokens") else DEFAULT_CONTEXT
             used_pct = min(100.0, used / limit * 100.0)
