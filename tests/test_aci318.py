@@ -225,18 +225,22 @@ class TestDevelopmentLengths:
         assert res.ld_in >= 12.0
 
     def test_hook_90(self):
-        """#8, f'c=4 ksi, fy=60 ksi, all factors = 1.0 (cover NOT ok → ψo=1.0).
+        """#8, f'c=4 ksi, fy=60 ksi — default call: all factors = 1.0 (conservative).
 
-        ψe=1.0, ψr=1.0, ψo=1.0 (cover_ok=False), ψc=1.0
+        Default: cover_ok=False → ψo=1.0; confining_reinf=False → ψr=1.0; enclosed=False → ψc=1.0.
+        ψe=1.0, ψr=1.0, ψo=1.0, ψc=1.0
         ldh = (60000×1.0)/(55×1.0×√4000) = 60000/3478.6 = 17.25 in  ≥ max(8×1, 6) = 8 in
-
-        Note: default cover_ok=True gives ψo=0.8 (favorable cover → shorter ldh = 13.8 in).
         """
-        res = aci318.development_length_hook(
-            "#8", 4.0, 60.0, hook_angle=90, cover_ok=False
-        )
+        res = aci318.development_length_hook("#8", 4.0, 60.0, hook_angle=90)
         assert res.ld_in == pytest.approx(17.25, rel=0.02)
         assert res.end_type == "hook_90"
+
+    def test_hook_90_with_reductions(self):
+        """Same bar, but engineer confirms cover OK → ψo=0.8; reduction gives shorter ldh."""
+        res_default  = aci318.development_length_hook("#8", 4.0, 60.0)
+        res_cover_ok = aci318.development_length_hook("#8", 4.0, 60.0, cover_ok=True)
+        assert res_cover_ok.ld_in == pytest.approx(res_default.ld_in * 0.8, rel=1e-6)
+        assert res_cover_ok.ld_in < res_default.ld_in
 
     def test_hook_minimum(self):
         res = aci318.development_length_hook("#3", 4.0, 60.0)

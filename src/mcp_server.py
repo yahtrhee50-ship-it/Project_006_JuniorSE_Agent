@@ -709,7 +709,7 @@ def concrete_development(
     clear_spacing_in: float | None = None,
     coated: bool = False,
     confining_reinf: bool = False,
-    cover_ok: bool = True,
+    cover_ok: bool = False,
     enclosed_in_ties: bool = False,
     generous_bearing: bool = False,
 ) -> str:

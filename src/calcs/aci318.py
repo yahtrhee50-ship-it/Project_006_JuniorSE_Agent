@@ -529,11 +529,15 @@ def development_length_hook(
     fy_ksi: float,
     hook_angle: int = 90,
     coated: bool = False,
-    confining_reinf: bool = False,   # ties/stirrups ≤ 3db — ψr = 0.8
-    cover_ok: bool = True,           # side cov ≥ 2.5 in, end cov ≥ 2 in (90°) — ψo = 0.8
-    enclosed_in_ties: bool = False,  # hooks within 0-3db tie spacing — ψc = 0.8
+    confining_reinf: bool = False,   # True → ψr = 0.8 (ties/stirrups ≤ 3db around hook)
+    cover_ok: bool = False,          # True → ψo = 0.8 (side cov ≥ 2.5 in, end cov ≥ 2 in)
+    enclosed_in_ties: bool = False,  # True → ψc = 0.8 (hook within 0-3db tie spacing)
 ) -> DevLengthResult:
-    """ACI 318-19 §25.4.3.1 standard-hook development length (90° or 180°)."""
+    """ACI 318-19 §25.4.3.1 standard-hook development length (90° or 180°).
+
+    All modification factors default to 1.0 (conservative) unless the engineer
+    confirms the qualifying condition and passes the flag as True.
+    """
     bar    = _rb.get_bar(bar_desig)
     db     = bar["db_in"]
     fc_psi = fc_ksi * 1000.0
@@ -549,8 +553,11 @@ def development_length_hook(
 
     end_type = f"hook_{hook_angle}"
     notes: list[str] = [f"{hook_angle}° standard hook."]
-    if not cover_ok:
-        notes.append("Cover conditions for ψo = 0.8 not confirmed — ψo = 1.0 used (conservative).")
+    notes.append(
+        f"ψr={'0.8 (confining reinf. confirmed)' if confining_reinf else '1.0 (default — no confining reinf. credited)'}  "
+        f"ψo={'0.8 (cover conditions confirmed)' if cover_ok else '1.0 (default — cover conditions not confirmed)'}  "
+        f"ψc={'0.8 (enclosed in ties confirmed)' if enclosed_in_ties else '1.0 (default)'}"
+    )
 
     return DevLengthResult(
         end_type=end_type, ld_in=ldh, db_in=db,
