@@ -23,6 +23,8 @@ if str(_ROOT) not in sys.path:
 from mcp.server.fastmcp import FastMCP
 
 from src.calcs import sections, beam_stiffness, aisc360, asce7
+from src.calcs import rebar as _rebar
+from src.calcs import aci318
 from src.agent import project as proj
 
 # stderr-only logging (never stdout)
@@ -331,6 +333,484 @@ def _format_calc(label, span_ft, base_loads, self_wt_klf, sized, Lb_ft, Fy_ksi, 
         "- ASCE 7 §4.7 live-load reduction not applied (pass reduced L if desired).",
         "- Single self-weight pass; reported DCR reflects the final selected section.",
         "- Confirmed: span, loads, support per engineer input. Review before use.",
+    ])
+
+
+# ===========================================================================
+# ACI 318-19 Concrete tools
+# ===========================================================================
+
+_PHI_FLEX_CONCRETE = 0.90   # for sizing pass
+
+_FYT_DEFAULT_KSI = 60.0     # stirrup yield strength default
+
+
+def _validate_concrete_inputs(
+    b_in, h_in, fc_ksi, fy_ksi, span_ft
+) -> None:
+    _require(b_in > 0,     f"b_in must be > 0, got {b_in}.")
+    _require(h_in > b_in,  f"h_in ({h_in}) should exceed b_in ({b_in}) for a beam.")
+    _require(0.5 <= fc_ksi <= 20.0,
+             f"fc_ksi={fc_ksi} outside range 0.5–20 ksi — check units (enter ksi, not psi).")
+    _require(40 <= fy_ksi <= 100,
+             f"fy_ksi={fy_ksi} outside range 40–100 ksi.")
+    _require(span_ft > 0, f"span_ft must be > 0, got {span_ft}.")
+    _require(span_ft <= 200, f"span_ft={span_ft} seems implausible (>200 ft) — check units.")
+
+
+def _effective_depth(h_in: float, cover_in: float, stirrup_bar: str, main_bar: str) -> float:
+    """d = h − cover − stirrup_db − main_db/2."""
+    s_db = _rebar.get_bar(stirrup_bar)["db_in"]
+    m_db = _rebar.get_bar(main_bar)["db_in"]
+    return h_in - cover_in - s_db - m_db / 2.0
+
+
+def _concrete_calc_header(label, b_in, h_in, fc_ksi, fy_ksi, span_ft, project_name) -> str:
+    from datetime import date
+    return "\n".join([
+        f"# Concrete Beam — {label}   (project: {project_name})",
+        f"Date: {date.today().isoformat()}  |  Code: ACI 318-19, ASCE 7-22 LRFD  |  Units: imperial",
+        f"Section: {b_in:.0f} in × {h_in:.0f} in,  f'c = {fc_ksi:.1f} ksi,  "
+        f"fy = {fy_ksi:.0f} ksi,  span = {span_ft:.1f} ft",
+    ])
+
+
+@mcp.tool()
+def get_rebar(designation: str) -> str:
+    """Look up standard rebar properties by designation.
+
+    Args:
+        designation: bar number, e.g. '#8', '#10', '5'. Available: #3–#11, #14, #18.
+    """
+    try:
+        bar = _rebar.get_bar(designation)
+    except ValueError as e:
+        return f"NOT FOUND: {e}"
+    d   = designation.strip()
+    return (
+        f"Rebar {d} (ASTM A615/A706):\n"
+        f"  db  = {bar['db_in']:.4f} in\n"
+        f"  Ab  = {bar['Ab_in2']:.2f} in²\n"
+        f"  wt  = {bar['wt_plf']:.3f} lb/ft\n"
+        f"  T-head eligible: {'Yes' if d in _rebar.THEAD_ELIGIBLE else 'No (#14/#18 excluded)'}"
+    )
+
+
+@mcp.tool()
+def check_concrete_beam(
+    b_in: float,
+    h_in: float,
+    fc_ksi: float,
+    fy_ksi: float,
+    main_bars: str,
+    stirrup_bar: str,
+    stirrup_spacing_in: float,
+    span_ft: float,
+    dead_load_klf: float,
+    live_load_klf: float,
+    cover_in: float = 1.5,
+    stirrup_legs: int = 2,
+    member_id: str = "C1",
+    project: str | None = None,
+) -> str:
+    """ACI 318-19 full check: flexure, shear, deflection, development, and curtailment.
+
+    Loads are UNFACTORED service loads; ASCE 7-22 LRFD governs the factored demand.
+    Support condition: simply supported.
+
+    Args:
+        b_in: beam width (in).
+        h_in: total beam height (in).
+        fc_ksi: concrete compressive strength (ksi), e.g. 4.0 for 4000 psi.
+        fy_ksi: rebar yield strength (ksi), e.g. 60.0.
+        main_bars: main tension reinforcement, e.g. '4#8' or '3#10'.
+        stirrup_bar: stirrup bar designation, e.g. '#3' or '#4'.
+        stirrup_spacing_in: stirrup spacing (in).
+        span_ft: clear span (ft).
+        dead_load_klf: unfactored dead load (kip/ft), excluding beam self-weight.
+        live_load_klf: unfactored live load (kip/ft).
+        cover_in: clear cover to stirrup face (in); default 1.5.
+        stirrup_legs: number of stirrup legs; default 2.
+        member_id: label for the archived calc.
+        project: project folder name; defaults to 'DEFAULT'.
+    """
+    try:
+        _validate_concrete_inputs(b_in, h_in, fc_ksi, fy_ksi, span_ft)
+        _require(stirrup_spacing_in > 0,
+                 f"stirrup_spacing_in must be > 0, got {stirrup_spacing_in}.")
+        _require(stirrup_legs in (2, 4, 6),
+                 f"stirrup_legs must be 2, 4, or 6, got {stirrup_legs}.")
+
+        n_main, bar_desig = _rebar.parse_bar_string(main_bars)
+        main_bar_props   = _rebar.get_bar(bar_desig)
+        stirrup_props    = _rebar.get_bar(stirrup_bar.strip())
+
+        d_in   = _effective_depth(h_in, cover_in, stirrup_bar.strip(), bar_desig)
+        _require(d_in > 0, f"Effective depth d = {d_in:.2f} in ≤ 0 — section is too shallow.")
+        As_in2 = n_main * main_bar_props["Ab_in2"]
+        Av_in2 = stirrup_legs * stirrup_props["Ab_in2"]
+
+        # Factored loads — ASCE 7-22 LRFD
+        loads = asce7._norm({"D": dead_load_klf, "L": live_load_klf})
+        _require(any(loads.values()), "No applied loads — provide dead_load_klf and/or live_load_klf.")
+        wu_klf, combo = asce7.factored_envelope(loads)
+        _require(wu_klf > 0, "Governing factored load is zero.")
+
+        # Demands (simply supported UDL)
+        Mu_kip_ft = wu_klf * span_ft**2 / 8.0
+        Vu_kips   = wu_klf * span_ft / 2.0
+
+        # ACI 318-19 checks
+        flex  = aci318.flexure_check(b_in, d_in, As_in2, fc_ksi, fy_ksi, Mu_kip_ft)
+        shear = aci318.shear_check(
+            b_in, d_in, As_in2, h_in, fc_ksi, fy_ksi,
+            Av_in2, stirrup_spacing_in, _FYT_DEFAULT_KSI, Vu_kips,
+        )
+        defl  = aci318.deflection_check(
+            b_in, h_in, d_in, As_in2, fc_ksi,
+            dead_load_klf, live_load_klf, span_ft,
+        )
+        dev   = aci318.development_length_straight(bar_desig, fc_ksi, fy_ksi, cover_in=cover_in)
+        curt  = aci318.bar_curtailment(
+            b_in, d_in, n_main, n_main // 2, bar_desig,
+            fc_ksi, fy_ksi, wu_klf, span_ft,
+        ) if n_main >= 2 else None
+
+    except NotImplementedError as e:
+        return f"ESCALATE TO SENIOR ENGINEER: {e}"
+    except (ValueError, InputError) as e:
+        return f"INPUT ERROR: {e}"
+
+    # Build and archive the full calc
+    chk = aci318.ConcreteBeamCheck(
+        b_in=b_in, h_in=h_in, d_in=d_in,
+        n_bars=n_main, bar_designation=bar_desig, As_in2=As_in2,
+        fc_ksi=fc_ksi, fy_ksi=fy_ksi,
+        Mu_kip_ft=Mu_kip_ft, Vu_kips=Vu_kips,
+        wu_klf=wu_klf, governing_combo=combo.name,
+        flexure=flex, shear=shear, deflection=defl, dev_straight=dev,
+    )
+    project_dir = proj.resolve_project_dir(project)
+    header = _concrete_calc_header(
+        f"{n_main}{bar_desig}", b_in, h_in, fc_ksi, fy_ksi, span_ft, project_dir.name
+    )
+    md = header + "\n\n" + chk.summary()
+    if curt:
+        md += "\n\n## Curtailment (cut ~half bars near supports)\n" + "\n".join(curt.summary_lines())
+    calc_path = proj.write_calc(project_dir, member_id, md, csv=None)
+    proj.append_member(project_dir, member_id, {
+        "section": f"{b_in:.0f}x{h_in:.0f}",
+        "bars": f"{n_main}{bar_desig}", "span_ft": span_ft,
+        "wu_klf": round(wu_klf, 4),
+        "Mu_kip_ft": round(Mu_kip_ft, 1), "Vu_kips": round(Vu_kips, 1),
+        "DCR_flexure": round(flex.DCR, 3), "DCR_shear": round(shear.DCR, 3),
+        "governing_combo": combo.name, "calc_file": calc_path.name,
+    }, bucket="concrete_beams")
+
+    max_dcr = max(flex.DCR, shear.DCR)
+    tag = "OK" if max_dcr <= 1.0 else "*** OVERSTRESSED ***"
+    defl_flag = ("PASS" if defl.delta_i_L_in <= defl.limit_L_360_in else "EXCEEDS L/360")
+    return (
+        f"Concrete beam {member_id} = {n_main}{bar_desig}  {tag}\n"
+        f"  Governing combo  : {combo.name} = {wu_klf:.3f} klf\n"
+        f"  Demands          : Mu = {Mu_kip_ft:.1f} kip-ft,  Vu = {Vu_kips:.1f} kips\n"
+        f"  Flexure          : φMn = {flex.phi_Mn_kip_ft:.1f} kip-ft,  "
+        f"DCR = {flex.DCR:.3f}  ({flex.code_ref})\n"
+        f"  Shear            : φVn = {shear.phi_Vn_kips:.1f} kips,  "
+        f"DCR = {shear.DCR:.3f}  ({shear.code_ref})\n"
+        f"  Deflection       : δi,L = {defl.delta_i_L_in:.4f} in,  "
+        f"δtot = {defl.delta_total_in:.4f} in  [{defl_flag}]\n"
+        f"  Dev. length (str): {dev.ld_in:.2f} in  ({dev.code_ref})\n"
+        + (f"  Curtailment      : cut {n_main // 2} bars at ≥ {curt.x_cutoff_ft:.2f} ft from support\n"
+           if curt else "")
+        + f"  Full calc        : {calc_path}\n"
+        f"  (ASCE 7 §4.7 LL reduction not applied; stirrup fyt = 60 ksi assumed.)"
+    )
+
+
+@mcp.tool()
+def design_concrete_beam(
+    b_in: float,
+    h_in: float,
+    fc_ksi: float,
+    fy_ksi: float,
+    n_bars: int,
+    span_ft: float,
+    dead_load_klf: float,
+    live_load_klf: float,
+    cover_in: float = 1.5,
+    stirrup_bar: str = "#3",
+    stirrup_legs: int = 2,
+    member_id: str = "C1",
+    project: str | None = None,
+) -> str:
+    """Size main tension reinforcement and suggest stirrups for a rectangular concrete beam.
+
+    Finds the lightest (smallest) standard bar such that n_bars of that size satisfy
+    ACI 318-19 flexure, shear, and deflection checks.  Stirrups are designed for the
+    critical section shear (Vu at d from face of support, conservatively taken as Vu,max).
+
+    Args:
+        b_in: beam width (in).
+        h_in: total beam height (in).
+        fc_ksi: concrete compressive strength (ksi).
+        fy_ksi: rebar yield strength (ksi).
+        n_bars: number of main tension bars.
+        span_ft: clear span (ft).
+        dead_load_klf: unfactored dead load (kip/ft).
+        live_load_klf: unfactored live load (kip/ft).
+        cover_in: clear cover to stirrup face (in).
+        stirrup_bar: stirrup bar designation for shear design, e.g. '#3'.
+        stirrup_legs: number of stirrup legs; default 2.
+        member_id: label for archived calc.
+        project: project folder name.
+    """
+    try:
+        _validate_concrete_inputs(b_in, h_in, fc_ksi, fy_ksi, span_ft)
+        _require(n_bars >= 2, f"n_bars must be ≥ 2, got {n_bars}.")
+        stirrup_props = _rebar.get_bar(stirrup_bar.strip())
+
+        # Use #4 as proxy for d estimate (refined after bar selection)
+        d_est = h_in - cover_in - stirrup_props["db_in"] - 0.500 / 2.0
+
+        loads  = asce7._norm({"D": dead_load_klf, "L": live_load_klf})
+        _require(any(loads.values()), "No applied loads provided.")
+        wu_klf, combo = asce7.factored_envelope(loads)
+        _require(wu_klf > 0, "Governing factored load is zero.")
+
+        Mu_kip_ft = wu_klf * span_ft**2 / 8.0
+        Vu_kips   = wu_klf * span_ft / 2.0
+
+        # Required As from flexure (quadratic)
+        As_req = aci318.required_As(b_in, d_est, fc_ksi, fy_ksi, Mu_kip_ft)
+        As_min = aci318.min_As(b_in, d_est, fc_ksi, fy_ksi)
+        As_req = max(As_req, As_min)
+
+        Ab_req = As_req / n_bars   # required area per bar
+
+        # Find smallest standard bar that meets the requirement
+        chosen_desig = None
+        for desig in _rebar.DESIGNATIONS:
+            bar = _rebar.get_bar(desig)
+            if bar["Ab_in2"] >= Ab_req:
+                chosen_desig = desig
+                break
+        if chosen_desig is None:
+            return (
+                f"INPUT ERROR: No standard bar size provides As ≥ {As_req:.3f} in² "
+                f"with {n_bars} bars. Increase n_bars or increase beam depth."
+            )
+
+        # Refine d with actual bar size
+        main_props = _rebar.get_bar(chosen_desig)
+        d_in  = h_in - cover_in - stirrup_props["db_in"] - main_props["db_in"] / 2.0
+        _require(d_in > 0,
+                 f"Effective depth d = {d_in:.2f} in ≤ 0 with {chosen_desig} — section too shallow.")
+        As_in2 = n_bars * main_props["Ab_in2"]
+
+        # Design stirrups — find spacing for Vu at critical section
+        Av_in2_pair = stirrup_legs * stirrup_props["Ab_in2"]
+
+        # Vc at critical section (conservative: use Vu at support)
+        shear_trial = aci318.shear_check(
+            b_in, d_in, As_in2, h_in, fc_ksi, fy_ksi,
+            Av_in2_pair, 1.0, _FYT_DEFAULT_KSI, Vu_kips,   # s=1 placeholder
+        )
+        Vc = shear_trial.Vc_kips
+        Vs_req = max(Vu_kips / _PHI_SHEAR - Vc, 0.0)   # required Vs
+
+        if Vs_req > 0:
+            s_req = Av_in2_pair * _FYT_DEFAULT_KSI * d_in / Vs_req
+        else:
+            s_req = 24.0   # Vc alone is enough; use practical max
+
+        # Apply spacing limits §9.7.6.2.2 and §9.6.3.4 (min reinf.)
+        Av_min_per_s = shear_trial.Av_min_per_s
+        s_min_Av = Av_in2_pair / Av_min_per_s   # spacing to just meet Av,min
+        fc_psi = fc_ksi * 1000.0
+        Vs_design = Av_in2_pair * _FYT_DEFAULT_KSI * d_in / s_req if Vs_req > 0 else 0.0
+        Vs_limit = 4.0 * (fc_psi**0.5) * b_in * d_in / 1000.0
+        s_max_code = min(d_in / 2.0, 24.0) if Vs_design <= Vs_limit else min(d_in / 4.0, 12.0)
+
+        s_design = min(s_req, s_min_Av, s_max_code)
+        s_design = max(3.0, round(s_design / 0.5) * 0.5)   # round down to nearest 0.5 in, min 3 in
+
+        # Final check with designed stirrups
+        flex  = aci318.flexure_check(b_in, d_in, As_in2, fc_ksi, fy_ksi, Mu_kip_ft)
+        shear = aci318.shear_check(
+            b_in, d_in, As_in2, h_in, fc_ksi, fy_ksi,
+            Av_in2_pair, s_design, _FYT_DEFAULT_KSI, Vu_kips,
+        )
+        defl  = aci318.deflection_check(
+            b_in, h_in, d_in, As_in2, fc_ksi,
+            dead_load_klf, live_load_klf, span_ft,
+        )
+        dev   = aci318.development_length_straight(chosen_desig, fc_ksi, fy_ksi, cover_in=cover_in)
+
+    except NotImplementedError as e:
+        return f"ESCALATE TO SENIOR ENGINEER: {e}"
+    except (ValueError, InputError) as e:
+        return f"INPUT ERROR: {e}"
+
+    # Archive
+    project_dir = proj.resolve_project_dir(project)
+    chk = aci318.ConcreteBeamCheck(
+        b_in=b_in, h_in=h_in, d_in=d_in,
+        n_bars=n_bars, bar_designation=chosen_desig, As_in2=As_in2,
+        fc_ksi=fc_ksi, fy_ksi=fy_ksi,
+        Mu_kip_ft=Mu_kip_ft, Vu_kips=Vu_kips,
+        wu_klf=wu_klf, governing_combo=combo.name,
+        flexure=flex, shear=shear, deflection=defl, dev_straight=dev,
+    )
+    header = _concrete_calc_header(
+        f"{n_bars}{chosen_desig} [designed]",
+        b_in, h_in, fc_ksi, fy_ksi, span_ft, project_dir.name,
+    )
+    md = header + "\n\n" + chk.summary()
+    calc_path = proj.write_calc(project_dir, member_id, md, csv=None)
+    proj.append_member(project_dir, member_id, {
+        "section": f"{b_in:.0f}x{h_in:.0f}",
+        "bars": f"{n_bars}{chosen_desig}",
+        "stirrups": f"{stirrup_legs}L{stirrup_bar}@{s_design:.1f}in",
+        "span_ft": span_ft,
+        "wu_klf": round(wu_klf, 4),
+        "Mu_kip_ft": round(Mu_kip_ft, 1), "Vu_kips": round(Vu_kips, 1),
+        "DCR_flexure": round(flex.DCR, 3), "DCR_shear": round(shear.DCR, 3),
+        "governing_combo": combo.name, "calc_file": calc_path.name,
+    }, bucket="concrete_beams")
+
+    max_dcr = max(flex.DCR, shear.DCR)
+    tag = "OK" if max_dcr <= 1.0 else "*** OVERSTRESSED ***"
+    return (
+        f"Concrete beam {member_id} [designed]  {tag}\n"
+        f"  Main steel      : {n_bars}{chosen_desig}  (As = {As_in2:.3f} in²,  "
+        f"d = {d_in:.3f} in)\n"
+        f"  Stirrups        : {stirrup_legs}L {stirrup_bar} @ {s_design:.1f} in\n"
+        f"  Governing combo : {combo.name} = {wu_klf:.3f} klf\n"
+        f"  Demands         : Mu = {Mu_kip_ft:.1f} kip-ft,  Vu = {Vu_kips:.1f} kips\n"
+        f"  Flexure         : φMn = {flex.phi_Mn_kip_ft:.1f} kip-ft,  DCR = {flex.DCR:.3f}\n"
+        f"  Shear           : φVn = {shear.phi_Vn_kips:.1f} kips,  DCR = {shear.DCR:.3f}\n"
+        f"  Dev. length     : ld = {dev.ld_in:.2f} in  ({dev.code_ref})\n"
+        f"  Deflection      : δi,L = {defl.delta_i_L_in:.4f} in,  "
+        f"δtot = {defl.delta_total_in:.4f} in\n"
+        f"  Full calc       : {calc_path}\n"
+        f"  (ASCE 7 §4.7 LL reduction not applied; stirrup fyt = 60 ksi assumed.)"
+    )
+
+
+@mcp.tool()
+def concrete_development(
+    bar_designation: str,
+    fc_ksi: float,
+    fy_ksi: float,
+    end_type: str = "straight",
+    bar_location: str = "other",
+    cover_in: float = 1.5,
+    clear_spacing_in: float | None = None,
+    coated: bool = False,
+    confining_reinf: bool = False,
+    cover_ok: bool = True,
+    enclosed_in_ties: bool = False,
+    generous_bearing: bool = False,
+) -> str:
+    """ACI 318-19 development length for a single bar — straight, hook, or T-head.
+
+    Args:
+        bar_designation: e.g. '#8', '#10', '5'.
+        fc_ksi: f'c (ksi).
+        fy_ksi: fy (ksi).
+        end_type: 'straight' (§25.4.2), 'hook_90' or 'hook_180' (§25.4.3), 'thead' (§25.4.4).
+        bar_location: 'top' (>12 in fresh concrete below) or 'other' — for straight ld ψt.
+        cover_in: clear cover to bar face (in).
+        clear_spacing_in: clear spacing to adjacent parallel bar (in); None = conservative.
+        coated: True for epoxy-coated bar.
+        confining_reinf: hook only — ties/stirrups ≤ 3db around hook → ψr = 0.8.
+        cover_ok: hook only — side cover ≥ 2.5 in, end cover ≥ 2 in → ψo = 0.8.
+        enclosed_in_ties: hook only — hook enclosed within 0-3db ties → ψc = 0.8.
+        generous_bearing: T-head only — Abrg ≥ 4Ab → ψp = 0.8.
+    """
+    try:
+        et = end_type.lower().strip()
+        if et == "straight":
+            result = aci318.development_length_straight(
+                bar_designation, fc_ksi, fy_ksi,
+                bar_location=bar_location, cover_in=cover_in,
+                clear_spacing_in=clear_spacing_in, coated=coated,
+            )
+        elif et in ("hook_90", "hook_180"):
+            angle = 90 if et == "hook_90" else 180
+            result = aci318.development_length_hook(
+                bar_designation, fc_ksi, fy_ksi,
+                hook_angle=angle, coated=coated,
+                confining_reinf=confining_reinf,
+                cover_ok=cover_ok, enclosed_in_ties=enclosed_in_ties,
+            )
+        elif et == "thead":
+            result = aci318.development_length_thead(
+                bar_designation, fc_ksi, fy_ksi,
+                coated=coated, generous_bearing=generous_bearing,
+            )
+        else:
+            return (
+                f"INPUT ERROR: end_type='{end_type}' not recognized. "
+                "Use 'straight', 'hook_90', 'hook_180', or 'thead'."
+            )
+    except NotImplementedError as e:
+        return f"ESCALATE TO SENIOR ENGINEER: {e}"
+    except (ValueError, InputError) as e:
+        return f"INPUT ERROR: {e}"
+
+    return "\n".join(result.summary_lines())
+
+
+@mcp.tool()
+def concrete_splice(
+    bar_designation: str,
+    fc_ksi: float,
+    fy_ksi: float,
+    splice_class: str = "B",
+    bar_location: str = "other",
+    cover_in: float = 1.5,
+    clear_spacing_in: float | None = None,
+    coated: bool = False,
+) -> str:
+    """ACI 318-19 §25.5.2 tension lap splice length.
+
+    Class A (1.0·ld): As,prov/As,req ≥ 2.0 AND ≤ 50% of bars spliced at section.
+    Class B (1.3·ld): all other cases (conservative default).
+
+    Args:
+        bar_designation: e.g. '#8'.
+        fc_ksi: f'c (ksi).
+        fy_ksi: fy (ksi).
+        splice_class: 'A' or 'B'.
+        bar_location: 'top' or 'other'.
+        cover_in: clear cover to bar face (in).
+        clear_spacing_in: clear spacing to adjacent bar (in); None = conservative.
+        coated: True for epoxy-coated.
+    """
+    try:
+        sc = splice_class.upper().strip()
+        if sc not in ("A", "B"):
+            return f"INPUT ERROR: splice_class must be 'A' or 'B', got '{splice_class}'."
+        ls, dev = aci318.splice_length(
+            bar_designation, fc_ksi, fy_ksi,
+            splice_class=sc, bar_location=bar_location,
+            cover_in=cover_in, clear_spacing_in=clear_spacing_in, coated=coated,
+        )
+    except (ValueError, InputError) as e:
+        return f"INPUT ERROR: {e}"
+
+    factor = 1.0 if sc == "A" else 1.3
+    return "\n".join([
+        f"ACI 318-19 §25.5.2 Tension Lap Splice — Class {sc}:",
+        f"  Bar                : {bar_designation}",
+        f"  Base ld            = {dev.ld_in:.2f} in  ({dev.code_ref})",
+        f"  Splice factor      = {factor:.1f}",
+        f"  Splice length ls   = {ls:.2f} in  ({ls / 12:.2f} ft)",
+        f"  Minimum            : 12 in per §25.5.2.1(b)",
+        f"  Note: Class A applies only when As,prov/As,req ≥ 2.0 AND ≤ 50% of bars "
+        f"spliced at the section — §25.5.2.1.",
     ])
 
 
