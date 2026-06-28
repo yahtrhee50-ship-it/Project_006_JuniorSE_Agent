@@ -143,20 +143,8 @@ def render(used_pct, model_name):
     sys.stdout.flush()
 
 
-def _log(msg: str) -> None:
-    try:
-        import datetime
-        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "statusline_debug.log"), "a", encoding="utf-8") as fh:
-            fh.write(f"[{datetime.datetime.now().isoformat()}] {msg}\n")
-    except Exception:
-        pass
-
-
 def main() -> None:
-    _log("SPAWNED (python started, about to read stdin)")
     raw = sys.stdin.read() if not sys.stdin.isatty() else ""
-    _log(f"stdin read OK, raw_len={len(raw)} raw={raw[:400]!r}")
     try:
         data = json.loads(raw) if raw.strip() else {}
     except Exception:
@@ -169,7 +157,6 @@ def main() -> None:
 
     if used_pct is None:
         tpath = find_transcript(data)
-        _log(f"resolved transcript={tpath!r}")
         used = context_used_tokens(tpath)
         if used is not None:
             limit = 1_000_000 if data.get("exceeds_200k_tokens") else DEFAULT_CONTEXT
