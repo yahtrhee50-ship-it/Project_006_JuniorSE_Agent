@@ -16,6 +16,26 @@ This project builds a "Junior Structural Engineer" AI agent that operates under 
 - Tell the user what files changed.
 - If making assumptions, state them clearly.
 
+## Context Window Management
+
+Monitor context usage throughout each session and manage it proactively:
+
+- **Target pause zone: 30–40% context used.** When context reaches this range AND the current
+  work is at a clean transition point (task complete, no background process running, no
+  multi-step sequence in flight), stop, write a session log, and tell the user to run `/clear`.
+- **Hard ceiling: 45%.** If this is reached before a natural stopping point, finish the
+  current atomic action (e.g., complete the commit in progress, finish the tool call), then
+  immediately stop, write a session log, and tell the user to run `/clear`.
+- **Do not interrupt:** a multi-step calc sequence, an open git commit, a mid-stream MCP tool
+  call, or any operation where stopping would leave the project in a broken or inconsistent
+  state. Complete the atomic unit first, then pause.
+- **Session log:** write progress to `docs/sessions/YYYY-MM-DD_session.md` (today's date)
+  before asking the user to clear. Include: what was completed, what is in progress, and the
+  next step to resume after `/clear`.
+- **Notify clearly:** say "Context is approaching the limit — I've logged progress to
+  `docs/sessions/YYYY-MM-DD_session.md`. Please run `/clear` to start a fresh context, then
+  tell me to resume."
+
 ## Git & GitHub
 
 **Always use Git and GitHub for this project.**
