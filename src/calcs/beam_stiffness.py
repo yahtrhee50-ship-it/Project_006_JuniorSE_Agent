@@ -407,6 +407,7 @@ class GeneralBeam:
         self._trap_loads: list[dict] = []
         self._point_loads: list[dict] = []
         self._point_moments: list[dict] = []       # {M_kip_in, x_in} (CCW +)
+        self._prescribed_v: dict[float, float] = {}  # x_in → delta_in (prescribed settlement)
 
     @classmethod
     def continuous(
@@ -463,6 +464,10 @@ class GeneralBeam:
         if x_ft <= 0 or x_ft >= self._L_ft:
             raise ValueError(f"Intermediate support x={x_ft} must be strictly inside (0, {self._L_ft})")
         self._supports[x_ft * 12.0] = bc
+
+    def set_support_settlement(self, x_ft: float, delta_in: float) -> None:
+        """Prescribe a vertical displacement at a support location (positive = upward)."""
+        self._prescribed_v[x_ft * 12.0] = float(delta_in)
 
     def add_hinge(self, x_ft: float) -> None:
         """Add an internal moment release (hinge) at x_ft (ft from left)."""
@@ -551,8 +556,14 @@ class GeneralBeam:
             raise np.linalg.LinAlgError(
                 "Singular stiffness matrix — beam has fewer than 2 support DOFs"
             )
+        # Apply prescribed support displacements (settlement / imposed movement)
+        for x_in, delta in self._prescribed_v.items():
+            node_idx = min(range(len(node_x)), key=lambda j: abs(node_x[j] - x_in))
+            d[v_dof[node_idx]] = delta
         if free:
-            d[free] = np.linalg.solve(K[np.ix_(free, free)], F[free])
+            constrained_list = sorted(constrained)
+            F_eff = F[free] - K[np.ix_(free, constrained_list)] @ d[constrained_list]
+            d[free] = np.linalg.solve(K[np.ix_(free, free)], F_eff)
 
         R_all = K @ d - F   # reaction vector (upward + at constrained DOFs)
 
