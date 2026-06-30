@@ -533,8 +533,9 @@ class GeneralBeam:
 
     def add_point_moment(self, M_kip_ft: float, x_ft: float) -> None:
         """
-        Applied point moment (kip-ft, positive = CCW) at x_ft.
-        Positive CCW increases sagging moment to the right of the application point.
+        Applied point moment (kip-ft, positive = CW / sagging convention) at x_ft.
+        Positive M increases the sagging bending moment for sections to the right.
+        A CCW external moment in the mathematical sense requires a negative value here.
         """
         if x_ft < 0 or x_ft > self._L_ft:
             raise ValueError(f"Point moment x={x_ft} outside beam")

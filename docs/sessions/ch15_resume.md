@@ -3,7 +3,7 @@
 **Goal:** Verify `GeneralBeam` stiffness solver against Hibbeler *Structural Analysis* Ch 15 problems.
 
 **Solver:** `src/calcs/beam_stiffness.py` — `GeneralBeam` class  
-**Tests:** `tests/test_general_beam.py` (85 total tests passing, all green as of commit `a3de4db`)  
+**Tests:** `tests/test_general_beam.py` (85 total tests passing, all green)  
 **Python:** `C:\Python314\python.exe`  
 **Run tests:** `C:\Python314\python.exe -m pytest tests/ -q`
 
@@ -53,15 +53,27 @@ For problems with **prescribed settlement** (EI does NOT cancel):
 - `delta_in = delta_m * 12`  (metres → solver inches)  
 - Moment output is directly in kN·m.
 
+## add_point_moment sign convention
+
+`add_point_moment(M_kip_ft, x_ft)` — **positive = CW (sagging convention)**,
+NOT CCW as the docstring originally said (now corrected in the source).  
+Hibbeler uses CCW = positive in his Qk vector. When a Hibbeler problem specifies a +M
+at a node (CCW), input it as **negative** in the solver: `add_point_moment(-M, x)`.  
+Verified by P3 benchmark: the CCW 20 kN·m moment in Hibbeler's Qk requires -20 in solver.
+
 ## Benchmark log
 
 | Problem | Description | Textbook answers | Solver result | Status | Benchmark file |
 |---|---|---|---|---|---|
 | 15-1 | Fixed–roller–fixed, 25 kN/m UDL on 6m span (total 10m) | M₁=90.0, M₃=22.5 kN·m | M₁=90.00, M₃=22.50 | **PASS** | `tests/benchmark_ch15_p1.py` |
 | 15-2 | Same geometry + +5mm upward settlement at roller, EI=60,000 kN·m² | M₁=27.5, M₃=116.25 kN·m | M₁=27.50, M₃=116.25 | **PASS** | `tests/benchmark_ch15_p2.py` |
-| 15-3 | — | — | — | pending | — |
+| 15-3 | Fixed–roller–roller, 6 kN/m on 12m span + 20 kN·m CCW at right roller | R_N1=39.64, R_N2=40.21, R_N3=-7.85 kN; M_N1=86.59 kN·m | R_N1=39.65, R_N2=40.21, R_N3=-7.85; M_N1=86.59 | **PASS** | `tests/benchmark_ch15_p3.py` |
+| 15-4 | — | — | — | pending | — |
+
+**Note on P3 geometry:** Reference file incorrectly labeled N1 as "roller." Textbook solution constrains θ_N1 (code 5) — N1 is FIXED. Moment reaction at N1 = 86.59 kN·m confirms this.
 
 ## Next action
 
-Resume at **Problem 15-3**.  
-Read `Reference/hibbeler_chapter_15_node_member_model/chapter_15_with_node_member_models.md` for geometry, then `Reference/chapter_15.md` for loads and textbook answers. Write `tests/benchmark_ch15_p3.py` and run.
+Resume at **Problem 15-4**.  
+Read `Reference/chapter_15.md` (page 522–523) and `Reference/hibbeler_chapter_15_node_member_model/chapter_15_with_node_member_models.md` for geometry.  
+Problem 15-4: pin at N1, rollers at N2 and N3 (all push/pull), 3 k point load at free end N4, three 10 ft spans. Write `tests/benchmark_ch15_p4.py` and run.
