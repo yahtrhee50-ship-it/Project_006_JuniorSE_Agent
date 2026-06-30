@@ -40,6 +40,13 @@ b = GeneralBeam.continuous(
 )
 ```
 
+## Primary reference file
+
+All problem geometry, support conditions, and textbook solutions live in:
+`Reference\hibbeler_chapter_15_node_member_model\chapter_15_with_node_member_models.md`
+
+Read this file before writing any benchmark — it has the node/member tables, JSON topology, and extracted PDF solution text for P1–P11.
+
 ## Metric-unit convention for Ch 15 problems
 
 All Hibbeler Ch 15 problems use SI (kN, m). The solver is imperial.  
@@ -71,7 +78,7 @@ Verified by P3 benchmark: the CCW 20 kN·m moment in Hibbeler's Qk requires -20 
 | 15-4 | Pin–roller–roller–free, 3 k point load at free end N4, three 10 ft spans | R_N1=+0.75, R_N2=-4.50, R_N3=+6.75 k (textbook prints Q8=-0.75 — sign error; statics confirms +0.75) | R_N1=+0.75, R_N2=-4.50, R_N3=+6.75 | **PASS** | `tests/benchmark_ch15_p4.py` |
 | 15-5 | Pin–roller–roller, triangular 0→15 kN/m on 6m span, 8m second span unloaded | R_N1=+12.43, R_N2=+34.5, R_N3=-1.929 kN (roller in tension) | R_N1=+12.4286, R_N2=+34.5000, R_N3=-1.9286 | **PASS** | `tests/benchmark_ch15_p5.py` |
 | 15-6 | Fixed–roller–roller, 10 kN/m UDL on **both** spans (6m + 8m = 14m total) | R_N3(Q3)=+32.25, R_N2(Q4)=+85.75, R_N1(Q5)=+22.0 kN; \|M_N1\|(Q6)=14.0 kN·m | R_N3=+32.2500, R_N2=+85.7500, R_N1=+22.0000; \|M_N1\|=14.0000 | **PASS** | `tests/benchmark_ch15_p6.py` |
-| 15-7 | Fixed–roller–fixed, 9 kN/m on 6m span + 6 kN/m on 4m span (different UDL per span) | R_N1=+28.9, R_N2=+41.375, R_N3=+7.725 kN; \|M_N1\|=30.8, \|M_N3\|=2.3 kN·m (slope-deflection) | R_N1=+28.9000, R_N2=+41.3750, R_N3=+7.7250; \|M_N1\|=30.8000, \|M_N3\|=2.3000 | **PASS** | `tests/benchmark_ch15_p7.py` |
+| 15-7 | Fixed–roller–fixed, 9 kN/m on 6m span + 6 kN/m on 4m span (different UDL per span) | R5=+28.9, R2=+41.375, R3=+7.725 kN; R6=30.8 kN·m (M at N1), \|R4\|=2.3 kN·m (M at N3) — textbook confirmed | R_N1=+28.9000, R_N2=+41.3750, R_N3=+7.7250; \|M_N1\|=30.8000, \|M_N3\|=2.3000 | **PASS** | `tests/benchmark_ch15_p7.py` |
 
 **Note on P3 geometry:** Reference file incorrectly labeled N1 as "roller." Textbook solution constrains θ_N1 (code 5) — N1 is FIXED. Moment reaction at N1 = 86.59 kN·m confirms this.
 
