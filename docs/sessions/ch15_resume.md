@@ -68,12 +68,18 @@ Verified by P3 benchmark: the CCW 20 kN·m moment in Hibbeler's Qk requires -20 
 | 15-1 | Fixed–roller–fixed, 25 kN/m UDL on 6m span (total 10m) | M₁=90.0, M₃=22.5 kN·m | M₁=90.00, M₃=22.50 | **PASS** | `tests/benchmark_ch15_p1.py` |
 | 15-2 | Same geometry + +5mm upward settlement at roller, EI=60,000 kN·m² | M₁=27.5, M₃=116.25 kN·m | M₁=27.50, M₃=116.25 | **PASS** | `tests/benchmark_ch15_p2.py` |
 | 15-3 | Fixed–roller–roller, 6 kN/m on 12m span + 20 kN·m CCW at right roller | R_N1=39.64, R_N2=40.21, R_N3=-7.85 kN; M_N1=86.59 kN·m | R_N1=39.65, R_N2=40.21, R_N3=-7.85; M_N1=86.59 | **PASS** | `tests/benchmark_ch15_p3.py` |
-| 15-4 | — | — | — | pending | — |
+| 15-4 | Pin–roller–roller–free, 3 k point load at free end N4, three 10 ft spans | R_N1=+0.75, R_N2=-4.50, R_N3=+6.75 k (textbook prints Q8=-0.75 — sign error; statics confirms +0.75) | R_N1=+0.75, R_N2=-4.50, R_N3=+6.75 | **PASS** | `tests/benchmark_ch15_p4.py` |
+| 15-5 | Pin–roller–roller, triangular 0→15 kN/m on 6m span, 8m second span unloaded | R_N1=+12.43, R_N2=+34.5, R_N3=-1.929 kN (roller in tension) | R_N1=+12.4286, R_N2=+34.5000, R_N3=-1.9286 | **PASS** | `tests/benchmark_ch15_p5.py` |
 
 **Note on P3 geometry:** Reference file incorrectly labeled N1 as "roller." Textbook solution constrains θ_N1 (code 5) — N1 is FIXED. Moment reaction at N1 = 86.59 kN·m confirms this.
 
+## Sign convention note — add_point_load
+
+`add_point_load(P_kips, x_ft)` — **positive P = downward** (gravity convention, same as UDL).  
+A 3 k downward load uses `P_kips=3`. Using negative here applies the load upward.  
+Verified by P4 benchmark.
+
 ## Next action
 
-Resume at **Problem 15-4**.  
-Read `Reference/chapter_15.md` (page 522–523) and `Reference/hibbeler_chapter_15_node_member_model/chapter_15_with_node_member_models.md` for geometry.  
-Problem 15-4: pin at N1, rollers at N2 and N3 (all push/pull), 3 k point load at free end N4, three 10 ft spans. Write `tests/benchmark_ch15_p4.py` and run.
+Resume at **Problem 15-6** (or whichever the engineer chooses next).  
+P15-6: Fixed at N1 (x=0), rollers at N2 (x=6) and N3 (x=14), UDL 10 kN/m on M1 (x=0 to x=6). Write `tests/benchmark_ch15_p6.py`.
