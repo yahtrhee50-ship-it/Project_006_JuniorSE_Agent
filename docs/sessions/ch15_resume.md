@@ -79,6 +79,7 @@ Verified by P3 benchmark: the CCW 20 kN·m moment in Hibbeler's Qk requires -20 
 | 15-5 | Pin–roller–roller, triangular 0→15 kN/m on 6m span, 8m second span unloaded | R_N1=+12.43, R_N2=+34.5, R_N3=-1.929 kN (roller in tension) | R_N1=+12.4286, R_N2=+34.5000, R_N3=-1.9286 | **PASS** | `tests/benchmark_ch15_p5.py` |
 | 15-6 | Fixed–roller–roller, 10 kN/m UDL on **both** spans (6m + 8m = 14m total) | R_N3(Q3)=+32.25, R_N2(Q4)=+85.75, R_N1(Q5)=+22.0 kN; \|M_N1\|(Q6)=14.0 kN·m | R_N3=+32.2500, R_N2=+85.7500, R_N1=+22.0000; \|M_N1\|=14.0000 | **PASS** | `tests/benchmark_ch15_p6.py` |
 | 15-7 | Fixed–roller–fixed, 9 kN/m on 6m span + 6 kN/m on 4m span (different UDL per span) | R5=+28.9, R2=+41.375, R3=+7.725 kN; R6=30.8 kN·m (M at N1), \|R4\|=2.3 kN·m (M at N3) — textbook confirmed | R_N1=+28.9000, R_N2=+41.3750, R_N3=+7.7250; \|M_N1\|=30.8000, \|M_N3\|=2.3000 | **PASS** | `tests/benchmark_ch15_p7.py` |
+| 15-8 | Fixed–hinge–roller, triangular 15→0 kN/m on 3m span (hinge at x=4m, roller at x=7m) | R₅=7.50 kN (roller), R₆=15.0 kN (fixed vertical), M₇=60.0 kN·m CCW (fixed moment) | R_N3=+7.5000, R_N1=+15.0000; \|M_N1\|=60.0000 | **PASS** | `tests/benchmark_ch15_p8.py` |
 
 **Note on P3 geometry:** Reference file incorrectly labeled N1 as "roller." Textbook solution constrains θ_N1 (code 5) — N1 is FIXED. Moment reaction at N1 = 86.59 kN·m confirms this.
 
@@ -90,4 +91,4 @@ Verified by P4 benchmark.
 
 ## Next action
 
-P15-7 complete (PASS). Resume at **Problem 15-8** (or whichever the engineer chooses next).
+P15-8 complete (PASS). Resume at **Problem 15-9** (or whichever the engineer chooses next).
