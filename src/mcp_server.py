@@ -25,6 +25,7 @@ from mcp.server.fastmcp import FastMCP
 from src.calcs import sections, beam_stiffness, aisc360, asce7
 from src.calcs import rebar as _rebar
 from src.calcs import aci318
+from src.calcs import truss_stiffness as _truss
 from src.agent import project as proj
 
 # stderr-only logging (never stdout)
@@ -812,6 +813,133 @@ def concrete_splice(
         f"  Note: Class A applies only when As,prov/As,req ≥ 2.0 AND ≤ 50% of bars "
         f"spliced at the section — §25.5.2.1.",
     ])
+
+
+# ===========================================================================
+# Truss tools  (Ch 14 — direct stiffness method for plane trusses)
+# ===========================================================================
+
+@mcp.tool()
+def solve_truss(
+    nodes:   list[dict],
+    members: list[dict],
+    loads:   list[dict] | None = None,
+) -> str:
+    """Analyze a 2-D plane truss by the direct stiffness method.
+
+    Assembles the global stiffness matrix; when loads are provided also solves
+    for nodal displacements, member axial forces, and support reactions.
+
+    Args:
+        nodes: list of node dicts.
+            Required keys: "id" (str), "x" (in), "y" (in),
+                           "support" ("pin" | "roller" | "free").
+            "pin"    → ux and uy both fixed.
+            "roller" → ux free, uy fixed (slides horizontally).
+            "free"   → no restraint.
+        members: list of member dicts.
+            Required keys: "id" (str), "i" (start node id), "j" (end node id),
+                           "A" (in²), "E" (ksi).
+        loads: optional list of nodal load dicts.
+            Required keys: "node" (node id), "Fx" (kip, +rightward),
+                           "Fy" (kip, +upward).
+            If omitted, only K is assembled (no solve).
+
+    Units: kips, inches, ksi.
+    Sign convention for member forces: + = tension, − = compression.
+    """
+    try:
+        truss = _truss.PlaneTruss()
+        for nd in nodes:
+            sup = str(nd.get("support", "free")).lower()
+            ux_fixed = sup in ("pin",)
+            uy_fixed = sup in ("pin", "roller")
+            truss.add_node(
+                str(nd["id"]),
+                float(nd["x"]), float(nd["y"]),
+                ux_fixed=ux_fixed, uy_fixed=uy_fixed,
+            )
+        for mb in members:
+            truss.add_member(
+                str(mb["id"]),
+                str(mb["i"]), str(mb["j"]),
+                float(mb["A"]), float(mb["E"]),
+            )
+        if loads:
+            for ld in loads:
+                truss.add_load(
+                    str(ld["node"]),
+                    Fx=float(ld.get("Fx", 0.0)),
+                    Fy=float(ld.get("Fy", 0.0)),
+                )
+
+    except (KeyError, TypeError, ValueError) as e:
+        return f"INPUT ERROR: {e}"
+
+    # --- Assemble K ---
+    try:
+        K, node_order = truss.assemble_K()
+    except ValueError as e:
+        return f"INPUT ERROR (assembly): {e}"
+
+    n = len(node_order)
+    dof_labels = []
+    for nid in node_order:
+        dof_labels += [f"u{nid}x", f"u{nid}y"]
+
+    def _fmt_row(row):
+        return "  " + "  ".join(f"{v:10.3f}" for v in row)
+
+    k_header = "  " + "  ".join(f"{lbl:>10}" for lbl in dof_labels)
+    k_rows   = [f"{dof_labels[r]:>8}  " + "  ".join(f"{K[r,c]:10.3f}" for c in range(2*n))
+                for r in range(2*n)]
+    k_block  = "\n".join(k_rows)
+
+    lines = [
+        f"Plane Truss — {n} nodes, {len(members)} members",
+        "",
+        "## Global Stiffness Matrix K (kip/in)",
+        f"DOF order: {', '.join(dof_labels)}",
+        k_block,
+    ]
+
+    if not loads:
+        lines += ["", "(No loads provided — K assembled only. Pass `loads` to solve.)"]
+        return "\n".join(lines)
+
+    # --- Solve ---
+    try:
+        res = truss.solve()
+    except ValueError as e:
+        return f"SOLVE ERROR: {e}"
+
+    lines += [
+        "",
+        "## Nodal Displacements",
+        f"  {'Node':>6}  {'ux (in)':>12}  {'uy (in)':>12}",
+    ]
+    for nid, (ux, uy) in res.displacements.items():
+        lines.append(f"  {nid:>6}  {ux:12.5f}  {uy:12.5f}")
+
+    lines += [
+        "",
+        "## Member Axial Forces (+ tension, − compression)",
+        f"  {'Member':>8}  {'F (kip)':>10}",
+    ]
+    for mid, F in res.member_forces.items():
+        lines.append(f"  {mid:>8}  {F:10.3f}")
+
+    lines += [
+        "",
+        "## Support Reactions",
+        f"  {'Node':>6}  {'Rx (kip)':>12}  {'Ry (kip)':>12}",
+    ]
+    for nid, (Rx, Ry) in res.reactions.items():
+        node_obj = truss._nodes[nid]
+        if node_obj.ux_fixed or node_obj.uy_fixed:
+            lines.append(f"  {nid:>6}  {Rx:12.3f}  {Ry:12.3f}")
+
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":
