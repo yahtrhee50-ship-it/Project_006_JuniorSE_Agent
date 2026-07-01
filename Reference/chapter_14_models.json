@@ -1,0 +1,734 @@
+{
+  "chapter": 14,
+  "model_type": "2D truss",
+  "models": [
+    {
+      "id": "CH14-M1",
+      "problems": [
+        "14-1",
+        "14-2",
+        "14-3"
+      ],
+      "units": {
+        "length": "in",
+        "force": "kip"
+      },
+      "nodes": [
+        {
+          "id": "N1",
+          "x": 0,
+          "y": 0,
+          "support": "pin",
+          "dofs": {
+            "ux": "fixed",
+            "uy": "fixed"
+          }
+        },
+        {
+          "id": "N2",
+          "x": 0,
+          "y": 72,
+          "support": "pin",
+          "dofs": {
+            "ux": "fixed",
+            "uy": "fixed"
+          }
+        },
+        {
+          "id": "N3",
+          "x": 48,
+          "y": 36,
+          "support": "free",
+          "dofs": {
+            "ux": "free",
+            "uy": "free"
+          }
+        },
+        {
+          "id": "N4",
+          "x": 120,
+          "y": 36,
+          "support": "pin",
+          "dofs": {
+            "ux": "fixed",
+            "uy": "fixed"
+          }
+        }
+      ],
+      "members": [
+        {
+          "id": "M1",
+          "i": "N1",
+          "j": "N3",
+          "L": 60,
+          "A": 0.5,
+          "E": 29000,
+          "EA": 14500
+        },
+        {
+          "id": "M2",
+          "i": "N3",
+          "j": "N4",
+          "L": 72,
+          "A": 0.5,
+          "E": 29000,
+          "EA": 14500
+        },
+        {
+          "id": "M3",
+          "i": "N2",
+          "j": "N3",
+          "L": 60,
+          "A": 0.5,
+          "E": 29000,
+          "EA": 14500
+        }
+      ],
+      "cases": [
+        {
+          "problem": "14-1",
+          "action": "assemble global truss stiffness matrix"
+        },
+        {
+          "problem": "14-2",
+          "loads": [
+            {
+              "node": "N3",
+              "Fx": 0,
+              "Fy": -4
+            }
+          ],
+          "answers": {
+            "ux_N3_in": 0,
+            "uy_N3_in": -0.02299
+          }
+        },
+        {
+          "problem": "14-3",
+          "same_load_as": "14-2",
+          "answers": {
+            "M1_kip": -3.33,
+            "M2_kip": 0,
+            "M3_kip": 3.33
+          },
+          "sign": "positive=tension, negative=compression"
+        }
+      ]
+    },
+    {
+      "id": "CH14-M2",
+      "problems": [
+        "14-4",
+        "14-5",
+        "14-6"
+      ],
+      "units": {
+        "length": "in",
+        "force": "lb"
+      },
+      "nodes": [
+        {
+          "id": "N1",
+          "x": 48,
+          "y": 48,
+          "support": "free",
+          "dofs": {
+            "ux": "free",
+            "uy": "free"
+          }
+        },
+        {
+          "id": "N2",
+          "x": 0,
+          "y": 0,
+          "support": "pin",
+          "dofs": {
+            "ux": "fixed",
+            "uy": "fixed"
+          }
+        },
+        {
+          "id": "N3",
+          "x": 48,
+          "y": 0,
+          "support": "pin",
+          "dofs": {
+            "ux": "fixed",
+            "uy": "fixed"
+          }
+        },
+        {
+          "id": "N4",
+          "x": 84,
+          "y": 0,
+          "support": "pin",
+          "dofs": {
+            "ux": "fixed",
+            "uy": "fixed"
+          }
+        }
+      ],
+      "members": [
+        {
+          "id": "M1",
+          "i": "N1",
+          "j": "N2",
+          "L": 67.882,
+          "A": 0.75,
+          "E": 29000000,
+          "EA": 21750000
+        },
+        {
+          "id": "M2",
+          "i": "N1",
+          "j": "N3",
+          "L": 48,
+          "A": 0.75,
+          "E": 29000000,
+          "EA": 21750000
+        },
+        {
+          "id": "M3",
+          "i": "N1",
+          "j": "N4",
+          "L": 60,
+          "A": 0.75,
+          "E": 29000000,
+          "EA": 21750000
+        }
+      ],
+      "cases": [
+        {
+          "problem": "14-4",
+          "action": "assemble global truss stiffness matrix"
+        },
+        {
+          "problem": "14-5",
+          "loads": [
+            {
+              "node": "N1",
+              "Fx": -500,
+              "Fy": 0
+            }
+          ],
+          "answers": {
+            "ux_N1_in": -0.00172,
+            "M2_lb": -12.7
+          }
+        },
+        {
+          "problem": "14-6",
+          "loads": [
+            {
+              "node": "N1",
+              "Fx": -500,
+              "Fy": 0
+            }
+          ],
+          "temperature": {
+            "member": "M2",
+            "delta_T_F": 100,
+            "alpha_per_F": 6.5e-06
+          },
+          "answers": {
+            "M2_kip": -6.57
+          }
+        }
+      ]
+    },
+    {
+      "id": "CH14-M3",
+      "problems": [
+        "14-7",
+        "14-8"
+      ],
+      "units": {
+        "length": "m",
+        "force": "N"
+      },
+      "nodes": [
+        {
+          "id": "N1",
+          "x": 4,
+          "y": 0,
+          "support": "free"
+        },
+        {
+          "id": "N2",
+          "x": 2,
+          "y": 0,
+          "support": "free"
+        },
+        {
+          "id": "N3",
+          "x": 2,
+          "y": 2,
+          "support": "free"
+        },
+        {
+          "id": "N4",
+          "x": 0,
+          "y": 2,
+          "support": "pin",
+          "dofs": {
+            "ux": "fixed",
+            "uy": "fixed"
+          }
+        },
+        {
+          "id": "N5",
+          "x": 0,
+          "y": 0,
+          "support": "pin",
+          "dofs": {
+            "ux": "fixed",
+            "uy": "fixed"
+          }
+        }
+      ],
+      "members": [
+        {
+          "id": "M1",
+          "i": "N2",
+          "j": "N5",
+          "L": 2,
+          "A": 0.0015,
+          "E": 200000000000.0,
+          "EA": 300000000.0
+        },
+        {
+          "id": "M2",
+          "i": "N1",
+          "j": "N2",
+          "L": 2,
+          "A": 0.0015,
+          "E": 200000000000.0,
+          "EA": 300000000.0
+        },
+        {
+          "id": "M3",
+          "i": "N1",
+          "j": "N3",
+          "L": 2.828427,
+          "A": 0.0015,
+          "E": 200000000000.0,
+          "EA": 300000000.0
+        },
+        {
+          "id": "M4",
+          "i": "N2",
+          "j": "N3",
+          "L": 2,
+          "A": 0.0015,
+          "E": 200000000000.0,
+          "EA": 300000000.0
+        },
+        {
+          "id": "M5",
+          "i": "N3",
+          "j": "N5",
+          "L": 2.828427,
+          "A": 0.0015,
+          "E": 200000000000.0,
+          "EA": 300000000.0
+        },
+        {
+          "id": "M6",
+          "i": "N3",
+          "j": "N4",
+          "L": 2,
+          "A": 0.0015,
+          "E": 200000000000.0,
+          "EA": 300000000.0
+        }
+      ],
+      "cases": [
+        {
+          "problem": "14-7",
+          "action": "assemble global truss stiffness matrix"
+        },
+        {
+          "problem": "14-8",
+          "loads": [
+            {
+              "node": "N1",
+              "Fx": 0,
+              "Fy": -30000
+            }
+          ],
+          "answers": {
+            "uy_N2_m": -0.00096569,
+            "M5_N": -42400
+          }
+        }
+      ]
+    },
+    {
+      "id": "CH14-M4",
+      "problems": [
+        "14-9",
+        "14-10",
+        "14-11"
+      ],
+      "units": {
+        "length": "m",
+        "force": "N"
+      },
+      "nodes": [
+        {
+          "id": "N1",
+          "x": 8,
+          "y": 3,
+          "support": "free"
+        },
+        {
+          "id": "N2",
+          "x": 4,
+          "y": 3,
+          "support": "free"
+        },
+        {
+          "id": "N3",
+          "x": 4,
+          "y": 0,
+          "support": "free"
+        },
+        {
+          "id": "N4",
+          "x": 0,
+          "y": 3,
+          "support": "pin",
+          "dofs": {
+            "ux": "fixed",
+            "uy": "fixed"
+          }
+        },
+        {
+          "id": "N5",
+          "x": 0,
+          "y": 0,
+          "support": "pin",
+          "dofs": {
+            "ux": "fixed",
+            "uy": "fixed"
+          }
+        }
+      ],
+      "members": [
+        {
+          "id": "M1",
+          "i": "N1",
+          "j": "N3",
+          "L": 5,
+          "A": 0.0015,
+          "E": 200000000000.0,
+          "EA": 300000000.0
+        },
+        {
+          "id": "M2",
+          "i": "N1",
+          "j": "N2",
+          "L": 4,
+          "A": 0.0015,
+          "E": 200000000000.0,
+          "EA": 300000000.0
+        },
+        {
+          "id": "M3",
+          "i": "N2",
+          "j": "N4",
+          "L": 4,
+          "A": 0.0015,
+          "E": 200000000000.0,
+          "EA": 300000000.0
+        },
+        {
+          "id": "M4",
+          "i": "N2",
+          "j": "N3",
+          "L": 3,
+          "A": 0.0015,
+          "E": 200000000000.0,
+          "EA": 300000000.0
+        },
+        {
+          "id": "M5",
+          "i": "N3",
+          "j": "N4",
+          "L": 5,
+          "A": 0.0015,
+          "E": 200000000000.0,
+          "EA": 300000000.0
+        },
+        {
+          "id": "M6",
+          "i": "N3",
+          "j": "N5",
+          "L": 4,
+          "A": 0.0015,
+          "E": 200000000000.0,
+          "EA": 300000000.0
+        },
+        {
+          "id": "M7",
+          "i": "N5",
+          "j": "N4",
+          "L": 3,
+          "A": 0.0015,
+          "E": 200000000000.0,
+          "EA": 300000000.0
+        }
+      ],
+      "cases": [
+        {
+          "problem": "14-9",
+          "action": "assemble global truss stiffness matrix"
+        },
+        {
+          "problem": "14-10",
+          "loads": [
+            {
+              "node": "N1",
+              "Fx": 0,
+              "Fy": -20000
+            }
+          ],
+          "answers": {
+            "M5_N": 33300
+          }
+        },
+        {
+          "problem": "14-11",
+          "loads": [],
+          "fabrication_error": {
+            "member": "M6",
+            "delta_L_m": 0.01
+          },
+          "answers": {
+            "uy_N2_m": 0.01333
+          }
+        }
+      ]
+    },
+    {
+      "id": "CH14-M5",
+      "problems": [
+        "14-12",
+        "14-13",
+        "14-14"
+      ],
+      "units": {
+        "length": "in",
+        "force": "kip"
+      },
+      "nodes": [
+        {
+          "id": "N1",
+          "x": 96,
+          "y": 72,
+          "support": "free"
+        },
+        {
+          "id": "N2",
+          "x": 96,
+          "y": 0,
+          "support": "roller_y",
+          "dofs": {
+            "ux": "free",
+            "uy": "fixed"
+          }
+        },
+        {
+          "id": "N3",
+          "x": 0,
+          "y": 0,
+          "support": "free"
+        },
+        {
+          "id": "N4",
+          "x": 0,
+          "y": 72,
+          "support": "pin",
+          "dofs": {
+            "ux": "fixed",
+            "uy": "fixed"
+          }
+        }
+      ],
+      "members": [
+        {
+          "id": "M1",
+          "i": "N1",
+          "j": "N2",
+          "L": 72,
+          "A": 2,
+          "E": 29000,
+          "EA": 58000
+        },
+        {
+          "id": "M2",
+          "i": "N2",
+          "j": "N3",
+          "L": 96,
+          "A": 2,
+          "E": 29000,
+          "EA": 58000
+        },
+        {
+          "id": "M3",
+          "i": "N1",
+          "j": "N4",
+          "L": 96,
+          "A": 2,
+          "E": 29000,
+          "EA": 58000
+        },
+        {
+          "id": "M4",
+          "i": "N3",
+          "j": "N4",
+          "L": 72,
+          "A": 2,
+          "E": 29000,
+          "EA": 58000
+        },
+        {
+          "id": "M5",
+          "i": "N1",
+          "j": "N3",
+          "L": 120,
+          "A": 2,
+          "E": 29000,
+          "EA": 58000
+        },
+        {
+          "id": "M6",
+          "i": "N2",
+          "j": "N4",
+          "L": 120,
+          "A": 2,
+          "E": 29000,
+          "EA": 58000
+        }
+      ],
+      "cases": [
+        {
+          "problem": "14-12",
+          "action": "assemble global truss stiffness matrix"
+        },
+        {
+          "problem": "14-13",
+          "loads": [
+            {
+              "node": "N3",
+              "Fx": 3,
+              "Fy": 0
+            }
+          ],
+          "answers": {
+            "ux_N2_in": 0.005455,
+            "M5_kip": -1.64
+          }
+        },
+        {
+          "problem": "14-14",
+          "loads": [
+            {
+              "node": "N3",
+              "Fx": 3,
+              "Fy": 0
+            }
+          ],
+          "fabrication_error": {
+            "member": "M3",
+            "delta_L_in": -0.025
+          },
+          "answers": {
+            "M3_kip": 3.55
+          }
+        }
+      ]
+    },
+    {
+      "id": "CH14-M6",
+      "problems": [
+        "14-15",
+        "14-16"
+      ],
+      "units": {
+        "length": "m",
+        "force": "N"
+      },
+      "nodes": [
+        {
+          "id": "N1",
+          "x": 0,
+          "y": 0,
+          "support": "inclined_roller",
+          "constraint": "normal to 45-degree support fixed; tangent free"
+        },
+        {
+          "id": "N2",
+          "x": 3,
+          "y": 0,
+          "support": "pin",
+          "dofs": {
+            "ux": "fixed",
+            "uy": "fixed"
+          }
+        },
+        {
+          "id": "N3",
+          "x": 3,
+          "y": 4,
+          "support": "free"
+        }
+      ],
+      "members": [
+        {
+          "id": "M1",
+          "i": "N1",
+          "j": "N3",
+          "L": 5,
+          "property": "EA_constant"
+        },
+        {
+          "id": "M2",
+          "i": "N2",
+          "j": "N3",
+          "L": 4,
+          "property": "EA_constant"
+        },
+        {
+          "id": "M3",
+          "i": "N1",
+          "j": "N2",
+          "L": 3,
+          "property": "EA_constant"
+        }
+      ],
+      "cases": [
+        {
+          "problem": "14-15",
+          "action": "assemble transformed global stiffness matrix; inclined support requires local-to-global DOF transformation"
+        },
+        {
+          "problem": "14-16",
+          "loads": [
+            {
+              "node": "N3",
+              "Fx": 0,
+              "Fy": -3000
+            }
+          ],
+          "answers": {
+            "uy_N3": "-29250/EA m",
+            "reaction_inclined_N": 3182,
+            "reaction_pin_x_N": -2250,
+            "reaction_pin_y_N": 750
+          }
+        }
+      ]
+    }
+  ]
+}
