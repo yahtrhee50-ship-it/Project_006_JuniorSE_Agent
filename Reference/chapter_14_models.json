@@ -669,8 +669,8 @@
         },
         {
           "id": "N2",
-          "x": 3,
-          "y": 0,
+          "x": 0,
+          "y": 4,
           "support": "pin",
           "dofs": {
             "ux": "fixed",
@@ -684,25 +684,26 @@
           "support": "free"
         }
       ],
+      "_geometry_note": "Right triangle with the right angle AT THE PIN (N2), not at N1. Reconstructed from Hibbeler's own intermediate member direction-cosine calcs (page 514-515) after the original N2=(3,0) placement was found to force a zero inclined-roller reaction via moment equilibrium about the pin, contradicting the textbook's 3182 N answer.",
       "members": [
         {
           "id": "M1",
+          "i": "N1",
+          "j": "N2",
+          "L": 4,
+          "property": "EA_constant"
+        },
+        {
+          "id": "M2",
           "i": "N1",
           "j": "N3",
           "L": 5,
           "property": "EA_constant"
         },
         {
-          "id": "M2",
+          "id": "M3",
           "i": "N2",
           "j": "N3",
-          "L": 4,
-          "property": "EA_constant"
-        },
-        {
-          "id": "M3",
-          "i": "N1",
-          "j": "N2",
           "L": 3,
           "property": "EA_constant"
         }

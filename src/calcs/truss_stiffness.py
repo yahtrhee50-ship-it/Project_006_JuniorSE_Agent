@@ -23,6 +23,10 @@ class TrussNode:
     y: float            # in
     ux_fixed: bool = False
     uy_fixed: bool = False
+    skew_angle_deg: Optional[float] = None
+    # Inclined (skewed) roller: restrained direction is normal to a support
+    # surface at `skew_angle_deg` from the global +x axis (tangent to the
+    # surface is free). When set, overrides ux_fixed/uy_fixed for this node.
 
 
 @dataclass
@@ -66,8 +70,9 @@ class PlaneTruss:
     # ------------------------------------------------------------------
 
     def add_node(self, id: str, x: float, y: float,
-                 ux_fixed: bool = False, uy_fixed: bool = False) -> "PlaneTruss":
-        self._nodes[id] = TrussNode(id, x, y, ux_fixed, uy_fixed)
+                 ux_fixed: bool = False, uy_fixed: bool = False,
+                 skew_angle_deg: Optional[float] = None) -> "PlaneTruss":
+        self._nodes[id] = TrussNode(id, x, y, ux_fixed, uy_fixed, skew_angle_deg)
         return self
 
     def add_member(self, id: str, i: str, j: str,
@@ -141,6 +146,34 @@ class PlaneTruss:
         node_order = list(self._nodes)
         return K, node_order
 
+    def assemble_K_transformed(self) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+        """Return (K_transformed, T, node_order): K rotated into the mixed
+        tangent/normal system at any inclined-support nodes (T K T.T), plus
+        the transformation matrix T itself, without solving."""
+        K, node_index = self._assemble()
+        node_ids = list(self._nodes)
+        T = self._transform_matrix(node_ids, node_index)
+        return T @ K @ T.T, T, node_ids
+
+    def _transform_matrix(self, node_ids: List[str], node_index: Dict[str, int]
+                          ) -> np.ndarray:
+        """Block-diagonal rotation matrix T mapping global (ux,uy) DOFs to a
+        mixed system: identity for ordinary nodes, [tangent; normal] local
+        axes for nodes with an inclined (skewed) support. T is orthogonal,
+        so T.T is its own inverse — used both to rotate K/F into the mixed
+        system and to rotate displacements/reactions back to global."""
+        ndof = 2 * len(node_ids)
+        T = np.eye(ndof)
+        for id, node in self._nodes.items():
+            if node.skew_angle_deg is None:
+                continue
+            theta = np.radians(node.skew_angle_deg)
+            c, s = np.cos(theta), np.sin(theta)
+            base = 2 * node_index[id]
+            # row0 = tangent (free): (-sin, cos); row1 = normal (fixed): (cos, sin)
+            T[base:base+2, base:base+2] = np.array([[-s, c], [c, s]])
+        return T
+
     def solve(self) -> TrussResults:
         """Assemble K, apply BCs, solve for displacements, reactions, member forces."""
         node_ids   = list(self._nodes)
@@ -148,19 +181,24 @@ class PlaneTruss:
         ndof = 2 * len(node_ids)
 
         K, _ = self._assemble()
+        T = self._transform_matrix(node_ids, node_index)
 
-        # Categorise DOFs
+        # Categorise DOFs (mixed system: skewed nodes use tangent/normal axes)
         free_dofs  = []
         fixed_dofs = []
         for id, node in self._nodes.items():
             base = 2 * node_index[id]
+            if node.skew_angle_deg is not None:
+                free_dofs.append(base)        # tangent — free to slide
+                fixed_dofs.append(base + 1)   # normal — restrained
+                continue
             (fixed_dofs if node.ux_fixed else free_dofs).append(base)
             (fixed_dofs if node.uy_fixed else free_dofs).append(base + 1)
 
         if not free_dofs:
             raise ValueError("All DOFs are fixed — no free DOFs to solve.")
 
-        # Force vector
+        # Force vector (global)
         F = np.zeros(ndof)
         for load in self._loads.values():
             idx = node_index[load.node_id]
@@ -180,20 +218,28 @@ class PlaneTruss:
             F[2*jj]   += F0 * lx
             F[2*jj+1] += F0 * ly
 
+        # Rotate into the mixed (tangent/normal-at-skewed-nodes) system.
+        # T is block-orthogonal (identity except at skewed nodes), so T.T
+        # both rotates K/F forward and rotates displacements/reactions back.
+        K_t = T @ K @ T.T
+        F_t = T @ F
+
         # Solve partitioned system
-        K_ff = K[np.ix_(free_dofs, free_dofs)]
-        F_f  = F[free_dofs]
+        K_ff = K_t[np.ix_(free_dofs, free_dofs)]
+        F_f  = F_t[free_dofs]
         try:
             d_f = np.linalg.solve(K_ff, F_f)
         except np.linalg.LinAlgError as exc:
             raise ValueError(f"Singular stiffness matrix — truss may be a mechanism: {exc}") from exc
 
-        d = np.zeros(ndof)
+        d_t = np.zeros(ndof)
         for i, dof in enumerate(free_dofs):
-            d[dof] = d_f[i]
+            d_t[dof] = d_f[i]
 
-        # Reactions (full K·d − F)
-        R = K @ d - F
+        # Reactions in the mixed system, then rotate both back to global
+        R_t = K_t @ d_t - F_t
+        d = T.T @ d_t
+        R = T.T @ R_t
 
         # Member axial forces
         member_forces: Dict[str, float] = {}

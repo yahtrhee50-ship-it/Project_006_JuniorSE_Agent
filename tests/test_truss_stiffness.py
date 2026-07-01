@@ -538,3 +538,107 @@ class TestCH14P14:
     def test_M3(self):
         F = self.res.member_forces["M3"]
         assert abs(F - 3.55) < 0.1, f"M3 = {F:.3f} kip, expected 3.55 kip"
+
+
+# ---------------------------------------------------------------------------
+# CH14-M6 geometry (Problems 14-15, 14-16) — inclined (skewed) roller support
+#   Units: length = m, force = N
+#   Nodes: N1(0,0) inclined roller (restrained normal to a 45-deg support
+#          surface, free to slide tangent to it), N2(0,4) pin, N3(3,4) free
+#   Members: M1(N1-N2, L=4 vertical), M2(N1-N3, L=5 diagonal),
+#            M3(N2-N3, L=3 horizontal) — a 3-4-5 right triangle with the
+#            right angle AT THE PIN (N2), not at N1.
+#   Truss is statically determinate (3 members + 3 reactions = 6 DOF), so
+#   member forces/reactions are independent of EA — the textbook expresses
+#   uy_N3 symbolically as -29250/EA, so EA=1 is used here to compare directly.
+#
+#   Geometry note: reconstructed from Hibbeler's own intermediate member
+#   direction-cosine calcs (not the simplified 3-node JSON, which had pin
+#   and free joint swapped — that placement makes the roller's moment arm
+#   about the pin vanish, forcing a zero reaction, contradicting the
+#   textbook's 3182 N answer). With N2 at (0,4): moment equilibrium about
+#   the pin gives Rx1=2250 N; a skew_angle_deg=45 roller (Rx1=Ry1) then
+#   gives |R1|=2250*sqrt(2)=3182 N, matching the textbook exactly.
+# ---------------------------------------------------------------------------
+
+def _ch14_m6() -> PlaneTruss:
+    t = PlaneTruss()
+    t.add_node("N1", 0, 0, skew_angle_deg=45.0)
+    t.add_node("N2", 0, 4, ux_fixed=True, uy_fixed=True)
+    t.add_node("N3", 3, 4, ux_fixed=False, uy_fixed=False)
+    t.add_member("M1", "N1", "N2", A=1.0, E=1.0)
+    t.add_member("M2", "N1", "N3", A=1.0, E=1.0)
+    t.add_member("M3", "N2", "N3", A=1.0, E=1.0)
+    return t
+
+
+# ---------------------------------------------------------------------------
+# 14-15: Transformed global stiffness matrix (local-to-global DOF rotation
+# at the inclined support). No back-of-book numeric answer for this
+# assembly-only problem, so checks are physics-based: the transformed
+# matrix must stay symmetric, and the N1 normal-normal entry must match
+# EA/L * (l . n)^2 summed over members meeting at N1, where n=(cos45,sin45)
+# is the restrained direction.
+# ---------------------------------------------------------------------------
+
+class TestCH14P15:
+    def setup_method(self):
+        t = _ch14_m6()
+        self.Kt, self.T, self.order = t.assemble_K_transformed()
+        # Node insertion order: N1=0, N2=1, N3=2; N1's local axes: tangent=0, normal=1
+        self.i1_normal = 1
+
+    def test_Kt_symmetry(self):
+        assert np.allclose(self.Kt, self.Kt.T, atol=1e-9)
+
+    def test_T_is_orthogonal(self):
+        assert np.allclose(self.T @ self.T.T, np.eye(self.T.shape[0]), atol=1e-9)
+
+    def test_N1_normal_normal_stiffness(self):
+        # M1 (N1-N2): L=4, lx=0, ly=1; M2 (N1-N3): L=5, lx=0.6, ly=0.8
+        # normal n=(cos45,sin45)=(0.7071,0.7071); component = EA/L*(l.n)^2
+        # Textbook (page 516, code4-code4 entry): 0.321
+        n = np.array([np.cos(np.radians(45)), np.sin(np.radians(45))])
+        l_M1 = np.array([0.0, 1.0])
+        l_M2 = np.array([0.6, 0.8])
+        expected = (1.0/4) * (l_M1 @ n)**2 + (1.0/5) * (l_M2 @ n)**2
+        assert abs(self.Kt[self.i1_normal, self.i1_normal] - expected) < 1e-6
+        assert abs(expected - 0.321) < 0.001, f"expected {expected:.5f}, textbook 0.321"
+
+
+# ---------------------------------------------------------------------------
+# 14-16: 3 kN downward load at N3
+# Textbook answers: uy_N3 = -29250/EA m, reaction_inclined = 3182 N,
+# reaction_pin = (-2250, 750) N
+# ---------------------------------------------------------------------------
+
+class TestCH14P16:
+    def setup_method(self):
+        t = _ch14_m6()
+        t.add_load("N3", Fx=0.0, Fy=-3000.0)
+        self.res = t.solve()
+
+    def test_uy_N3(self):
+        _, uy = self.res.displacements["N3"]
+        assert abs(uy - (-29250.0)) < 2.0, f"uy_N3 = {uy:.2f}/EA, expected -29250/EA"
+
+    def test_reaction_pin(self):
+        Rx, Ry = self.res.reactions["N2"]
+        assert abs(Rx - (-2250.0)) < 5.0, f"Rx_N2 = {Rx:.1f} N, expected -2250 N"
+        assert abs(Ry - 750.0) < 5.0, f"Ry_N2 = {Ry:.1f} N, expected 750 N"
+
+    def test_reaction_inclined(self):
+        Rx, Ry = self.res.reactions["N1"]
+        magnitude = float(np.hypot(Rx, Ry))
+        assert abs(magnitude - 3182.0) < 5.0, \
+            f"|R_N1| = {magnitude:.1f} N, expected 3182 N"
+        # Purely normal to the 45-deg incline: Rx == Ry
+        assert abs(Rx - Ry) < 1.0, f"R_N1 not aligned to 45 deg: Rx={Rx:.1f}, Ry={Ry:.1f}"
+
+    def test_statics_Fy(self):
+        total_Ry = sum(Ry for _, Ry in self.res.reactions.values())
+        assert abs(total_Ry - 3000.0) < 1e-6
+
+    def test_statics_Fx(self):
+        total_Rx = sum(Rx for Rx, _ in self.res.reactions.values())
+        assert abs(total_Rx) < 1e-6
