@@ -448,3 +448,93 @@ class TestCH14P10:
     def test_M5(self):
         F = self.res.member_forces["M5"]
         assert abs(F - 33300.0) < 200.0, f"M5 = {F:.1f} N, expected 33300 N"
+
+
+# ---------------------------------------------------------------------------
+# CH14-M5 geometry (Problems 14-12, 14-13, 14-14)
+#   Units: length = in, force = kip
+#   Nodes: N1(96,72) free, N2(96,0) roller (uy fixed, ux free),
+#          N3(0,0) free, N4(0,72) pin
+#   Members: M1(N1-N2), M2(N2-N3), M3(N1-N4), M4(N3-N4), M5(N1-N3), M6(N2-N4)
+#   A = 2 in^2, E = 29000 ksi, EA = 58000 kip
+# ---------------------------------------------------------------------------
+
+def _ch14_m5(delta_L0_M3: float = 0.0) -> PlaneTruss:
+    t = PlaneTruss()
+    t.add_node("N1", 96, 72, ux_fixed=False, uy_fixed=False)
+    t.add_node("N2", 96,  0, ux_fixed=False, uy_fixed=True)
+    t.add_node("N3",  0,  0, ux_fixed=False, uy_fixed=False)
+    t.add_node("N4",  0, 72, ux_fixed=True, uy_fixed=True)
+    t.add_member("M1", "N1", "N2", A=2, E=29000)
+    t.add_member("M2", "N2", "N3", A=2, E=29000)
+    t.add_member("M3", "N1", "N4", A=2, E=29000, delta_L0=delta_L0_M3)
+    t.add_member("M4", "N3", "N4", A=2, E=29000)
+    t.add_member("M5", "N1", "N3", A=2, E=29000)
+    t.add_member("M6", "N2", "N4", A=2, E=29000)
+    return t
+
+
+# ---------------------------------------------------------------------------
+# 14-12: Global stiffness matrix K
+# No back-of-book numeric answer exists for this problem (assembly only), so
+# checks are physics-based: entries verified against the direct-stiffness
+# formula k = EA/L * [[lx^2, lx*ly],[lx*ly, ly^2]] from each member's own
+# direction cosines, plus overall symmetry.
+# ---------------------------------------------------------------------------
+
+class TestCH14P12:
+    def setup_method(self):
+        t = _ch14_m5()
+        self.K, self.order = t.assemble_K()
+        # Node insertion order: N1=0, N2=1, N3=2, N4=3
+        self.i1x, self.i1y = 0, 1
+        self.i3x, self.i3y = 4, 5
+
+    def test_K_symmetry(self):
+        assert np.allclose(self.K, self.K.T, atol=1e-3)
+
+    def test_K_N1x_N1x(self):
+        # M1(N1-N2,lx=0): 0; M3(N1-N4,lx=-1,EA/L=58000/96): full; M5(N1-N3,lx=-0.8,EA/L=58000/120): 0.64*
+        expected = (58000 / 96) + 0.64 * (58000 / 120)
+        assert abs(self.K[self.i1x, self.i1x] - expected) < 0.5
+
+    def test_K_N3y_N3y(self):
+        # M2(N2-N3,ly=0): 0; M4(N3-N4,ly=1,EA/L=58000/72): full; M5(N1-N3,ly=-0.6): 0.36*
+        expected = (58000 / 72) + 0.36 * (58000 / 120)
+        assert abs(self.K[self.i3y, self.i3y] - expected) < 0.5
+
+
+# ---------------------------------------------------------------------------
+# 14-13: Displacement and member force under 3-kip horizontal load at N3
+# Textbook answers: ux_N2 = 0.005455 in, M5 = -1.64 kip (compression)
+# ---------------------------------------------------------------------------
+
+class TestCH14P13:
+    def setup_method(self):
+        t = _ch14_m5()
+        t.add_load("N3", Fx=3.0, Fy=0.0)
+        self.res = t.solve()
+
+    def test_ux_N2(self):
+        ux, _ = self.res.displacements["N2"]
+        assert abs(ux - 0.005455) < 0.0001, f"ux_N2 = {ux:.6f} in, expected 0.005455 in"
+
+    def test_M5(self):
+        F = self.res.member_forces["M5"]
+        assert abs(F - (-1.64)) < 0.05, f"M5 = {F:.3f} kip, expected -1.64 kip"
+
+
+# ---------------------------------------------------------------------------
+# 14-14: Same 3-kip load as 14-13, plus M3 fabricated 0.025 in too short
+# Textbook answer: M3 = 3.55 kip (tension)
+# ---------------------------------------------------------------------------
+
+class TestCH14P14:
+    def setup_method(self):
+        t = _ch14_m5(delta_L0_M3=-0.025)
+        t.add_load("N3", Fx=3.0, Fy=0.0)
+        self.res = t.solve()
+
+    def test_M3(self):
+        F = self.res.member_forces["M3"]
+        assert abs(F - 3.55) < 0.1, f"M3 = {F:.3f} kip, expected 3.55 kip"
