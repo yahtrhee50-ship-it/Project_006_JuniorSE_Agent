@@ -294,7 +294,7 @@ class SimpleBeam:
 # GeneralBeam — general-purpose continuous/fixed/cantilever beam solver
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-_VALID_BC = frozenset({"free", "pin", "roller", "fixed"})
+_VALID_BC = frozenset({"free", "pin", "roller", "fixed", "guided"})
 
 # 8-point Gauss-Legendre nodes and weights on [-1, 1]
 _GAUSS_XI, _GAUSS_WT = np.polynomial.legendre.leggauss(8)
@@ -789,6 +789,11 @@ class GeneralBeam:
                 constrained.add(th_left[node_idx])
                 if th_right[node_idx] != th_left[node_idx]:
                     constrained.add(th_right[node_idx])
+            elif bc == "guided":
+                # Smooth slider: vertical translation free, rotation fixed to zero
+                constrained.add(th_left[node_idx])
+                if th_right[node_idx] != th_left[node_idx]:
+                    constrained.add(th_right[node_idx])
 
         apply_bc(0, self._left_bc)
         apply_bc(N - 1, self._right_bc)
@@ -817,7 +822,7 @@ class GeneralBeam:
             xi = node_x[node_idx]
             if bc in ("pin", "roller", "fixed"):
                 reactions[xi] = float(R_all[v_dof[node_idx]])
-            if bc == "fixed":
+            if bc in ("fixed", "guided"):
                 M_rxn = float(R_all[th_left[node_idx]])
                 if abs(M_rxn) > 1e-10:
                     moment_reactions[xi] = M_rxn / 12.0  # kip-in → kip-ft
