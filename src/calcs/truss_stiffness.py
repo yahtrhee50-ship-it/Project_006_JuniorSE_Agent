@@ -32,6 +32,9 @@ class TrussMember:
     j_node: str         # end node id
     A: float            # in²
     E: float            # ksi
+    delta_L0: float = 0.0    # in; fabrication misfit — + = member fabricated too long (wants to elongate)
+    delta_T_F: float = 0.0   # deg F temperature change
+    alpha_per_F: float = 0.0 # coefficient of thermal expansion, 1/deg F
 
 
 @dataclass
@@ -68,8 +71,9 @@ class PlaneTruss:
         return self
 
     def add_member(self, id: str, i: str, j: str,
-                   A: float, E: float) -> "PlaneTruss":
-        self._members[id] = TrussMember(id, i, j, A, E)
+                   A: float, E: float, delta_L0: float = 0.0,
+                   delta_T_F: float = 0.0, alpha_per_F: float = 0.0) -> "PlaneTruss":
+        self._members[id] = TrussMember(id, i, j, A, E, delta_L0, delta_T_F, alpha_per_F)
         return self
 
     def add_load(self, node_id: str, Fx: float = 0.0,
@@ -102,6 +106,12 @@ class PlaneTruss:
             [-c*s, -s*s,  c*s,  s*s],
         ])
         return km, L, lx, ly
+
+    @staticmethod
+    def _member_F0(m: TrussMember, L: float) -> float:
+        """Fixed-end axial force (kip) equivalent to the member's free elongation
+        (fabrication misfit + thermal expansion). + = member wants to lengthen."""
+        return m.E * m.A * (m.delta_L0 / L + m.alpha_per_F * m.delta_T_F)
 
     def _assemble(self) -> Tuple[np.ndarray, Dict[str, int]]:
         """Assemble full global K; return (K, node_index)."""
@@ -157,6 +167,19 @@ class PlaneTruss:
             F[2*idx]   += load.Fx
             F[2*idx+1] += load.Fy
 
+        # Equivalent nodal loads from member fabrication misfit / thermal strain
+        for m in self._members.values():
+            if m.delta_L0 == 0.0 and (m.delta_T_F == 0.0 or m.alpha_per_F == 0.0):
+                continue
+            _, L, lx, ly = self._member_k_global(m)
+            F0 = self._member_F0(m, L)
+            ii = node_index[m.i_node]
+            jj = node_index[m.j_node]
+            F[2*ii]   += -F0 * lx
+            F[2*ii+1] += -F0 * ly
+            F[2*jj]   += F0 * lx
+            F[2*jj+1] += F0 * ly
+
         # Solve partitioned system
         K_ff = K[np.ix_(free_dofs, free_dofs)]
         F_f  = F[free_dofs]
@@ -181,7 +204,8 @@ class PlaneTruss:
             d_i = d[2*ii:2*ii+2]
             d_j = d[2*jj:2*jj+2]
             delta = lx*(d_j[0]-d_i[0]) + ly*(d_j[1]-d_i[1])
-            member_forces[m.id] = m.A * m.E / L * delta
+            F0 = self._member_F0(m, L)
+            member_forces[m.id] = m.A * m.E / L * delta - F0
 
         displacements = {id: (d[2*node_index[id]], d[2*node_index[id]+1])
                          for id in node_ids}

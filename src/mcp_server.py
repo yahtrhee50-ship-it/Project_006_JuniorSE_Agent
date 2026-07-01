@@ -840,6 +840,10 @@ def solve_truss(
         members: list of member dicts.
             Required keys: "id" (str), "i" (start node id), "j" (end node id),
                            "A" (in²), "E" (ksi).
+            Optional (fabrication misfit / thermal strain — adds equivalent nodal
+            loads and is netted out of the reported member force):
+                "delta_L0" (in, + = member fabricated too long / wants to elongate),
+                "delta_T_F" (deg F change), "alpha_per_F" (1/deg F).
         loads: optional list of nodal load dicts.
             Required keys: "node" (node id), "Fx" (kip, +rightward),
                            "Fy" (kip, +upward).
@@ -864,6 +868,9 @@ def solve_truss(
                 str(mb["id"]),
                 str(mb["i"]), str(mb["j"]),
                 float(mb["A"]), float(mb["E"]),
+                delta_L0=float(mb.get("delta_L0", 0.0)),
+                delta_T_F=float(mb.get("delta_T_F", 0.0)),
+                alpha_per_F=float(mb.get("alpha_per_F", 0.0)),
             )
         if loads:
             for ld in loads:

@@ -217,3 +217,62 @@ class TestSingleMember:
         t.add_load("B", Fx=10.0)
         with pytest.raises(ValueError, match="[Ss]ingular|[Mm]echanism"):
             t.solve()
+
+
+# ---------------------------------------------------------------------------
+# Initial-strain (fabrication misfit / thermal) equivalent nodal loads
+# ---------------------------------------------------------------------------
+
+def _ch14_m2(delta_T_F: float = 0.0, alpha_per_F: float = 0.0) -> PlaneTruss:
+    """CH14-M2 geometry (Problems 14-4, 14-5, 14-6). Units: in, lb (E in psi here,
+    kept internally consistent — same ratio as ksi/kip)."""
+    t = PlaneTruss()
+    t.add_node("N1", 48, 48, ux_fixed=False, uy_fixed=False)
+    t.add_node("N2",  0,  0, ux_fixed=True, uy_fixed=True)
+    t.add_node("N3", 48,  0, ux_fixed=True, uy_fixed=True)
+    t.add_node("N4", 84,  0, ux_fixed=True, uy_fixed=True)
+    t.add_member("M1", "N1", "N2", A=0.75, E=29000)
+    t.add_member("M2", "N1", "N3", A=0.75, E=29000,
+                 delta_T_F=delta_T_F, alpha_per_F=alpha_per_F)
+    t.add_member("M3", "N1", "N4", A=0.75, E=29000)
+    return t
+
+
+class TestCH14P6:
+    """14-6: same load as 14-5 (Fx=-0.5 kip at N1) plus +100 F on M2.
+    Textbook answer: M2 = -6.57 kip."""
+
+    def setup_method(self):
+        t = _ch14_m2(delta_T_F=100.0, alpha_per_F=6.5e-6)
+        t.add_load("N1", Fx=-0.5, Fy=0.0)
+        self.res = t.solve()
+
+    def test_M2_with_temperature(self):
+        F = self.res.member_forces["M2"]
+        assert abs(F - (-6.57)) < 0.05, f"M2 = {F:.3f} kip, expected -6.57 kip"
+
+
+class TestFabricationMisfit:
+    """14-11: no applied load, member M6 fabricated 0.01 m too long (CH14-M4
+    geometry, SI units). Textbook answer: uy_N2 = +0.01333 m."""
+
+    def setup_method(self):
+        t = PlaneTruss()
+        t.add_node("N1", 8, 3, ux_fixed=False, uy_fixed=False)
+        t.add_node("N2", 4, 3, ux_fixed=False, uy_fixed=False)
+        t.add_node("N3", 4, 0, ux_fixed=False, uy_fixed=False)
+        t.add_node("N4", 0, 3, ux_fixed=True, uy_fixed=True)
+        t.add_node("N5", 0, 0, ux_fixed=True, uy_fixed=True)
+        E = 200_000_000_000  # Pa
+        t.add_member("M1", "N1", "N3", A=0.0015, E=E)
+        t.add_member("M2", "N1", "N2", A=0.0015, E=E)
+        t.add_member("M3", "N2", "N4", A=0.0015, E=E)
+        t.add_member("M4", "N2", "N3", A=0.0015, E=E)
+        t.add_member("M5", "N3", "N4", A=0.0015, E=E)
+        t.add_member("M6", "N3", "N5", A=0.0015, E=E, delta_L0=0.01)
+        t.add_member("M7", "N5", "N4", A=0.0015, E=E)
+        self.res = t.solve()
+
+    def test_uy_N2(self):
+        _, uy = self.res.displacements["N2"]
+        assert abs(uy - 0.01333) < 0.0005, f"uy_N2 = {uy:.5f} m, expected 0.01333 m"
