@@ -29,8 +29,10 @@ import numpy as np
 
 from src.fea.analysis_model import AnalysisModel
 from src.fea.domain import Domain, Node
+from src.fea.elements.frame import Frame
 from src.fea.elements.truss import Truss
-from src.fea.loads.pattern import (ConstantTimeSeries, LinearTimeSeries,
+from src.fea.loads.pattern import (ConstantTimeSeries, FramePointLoad,
+                                   FrameUniformLoad, LinearTimeSeries,
                                    LoadPattern, NodalLoad, TimeSeries,
                                    TrussStrainLoad)
 from src.fea.materials.uniaxial import ElasticMaterial, UniaxialMaterial
@@ -93,6 +95,9 @@ class Model:
         if kind == "Truss":
             mat = self._materials[props["mat"]]
             elem = Truss(tag, node_tags, A=props["A"], material=mat)
+        elif kind == "Frame":
+            sec = self._sections[props["section"]]
+            elem = Frame(tag, node_tags, section=sec)
         else:
             raise ValueError(f"Unknown element '{kind}'")
         self.domain.add_element(elem)
@@ -122,16 +127,27 @@ class Model:
 
     def ele_load(self, ele_tag: int, *, delta_L0: float = 0.0,
                  delta_T: float = 0.0, alpha: float = 0.0,
+                 wx: float = 0.0, wy: float = 0.0,
+                 Px: float = 0.0, Py: float = 0.0,
+                 distance_from_i: Optional[float] = None,
                  pattern: Optional[int] = None) -> None:
-        """Truss initial-strain load: fabrication misfit delta_L0
-        (+ = fabricated too long) and/or thermal alpha * delta_T."""
-        self.domain.get_element(ele_tag)   # fail fast on a bad tag
+        """Truss initial-strain load (delta_L0 / delta_T*alpha) or Frame
+        element load: uniform (wx, wy) over the full length, or a point
+        load (Px, Py) at distance_from_i — all in GLOBAL components."""
+        elem = self.domain.get_element(ele_tag)
         p = (self.domain.get_load_pattern(pattern) if pattern is not None
              else self._current_pattern)
         if p is None:
             raise ValueError("No load pattern defined — call pattern() first")
-        p.add_element_load(TrussStrainLoad(ele_tag, delta_L0=delta_L0,
-                                           delta_T=delta_T, alpha=alpha))
+        if isinstance(elem, Frame):
+            if distance_from_i is not None:
+                p.add_element_load(FramePointLoad(
+                    ele_tag, Px=Px, Py=Py, distance_from_i=distance_from_i))
+            else:
+                p.add_element_load(FrameUniformLoad(ele_tag, wx=wx, wy=wy))
+        else:
+            p.add_element_load(TrussStrainLoad(ele_tag, delta_L0=delta_L0,
+                                               delta_T=delta_T, alpha=alpha))
 
     # -- analysis -----------------------------------------------------------
 

@@ -66,6 +66,30 @@ class TrussStrainLoad(ElementLoad):
         self.alpha = float(alpha)
 
 
+class FrameUniformLoad(ElementLoad):
+    """Uniform load per unit length (wx, wy) in GLOBAL directions, over the
+    full length of a Frame element. The element projects these onto its own
+    local axial/transverse directions using its direction cosines."""
+
+    def __init__(self, ele_tag: int, wx: float = 0.0, wy: float = 0.0) -> None:
+        super().__init__(ele_tag)
+        self.wx = float(wx)
+        self.wy = float(wy)
+
+
+class FramePointLoad(ElementLoad):
+    """Point load (Px, Py) in GLOBAL directions at distance_from_i along a
+    Frame element's axis. The element projects these onto its own local
+    axial/transverse directions using its direction cosines."""
+
+    def __init__(self, ele_tag: int, Px: float = 0.0, Py: float = 0.0,
+                 distance_from_i: float = 0.0) -> None:
+        super().__init__(ele_tag)
+        self.Px = float(Px)
+        self.Py = float(Py)
+        self.distance_from_i = float(distance_from_i)
+
+
 class LoadPattern:
     def __init__(self, tag: int, time_series: TimeSeries) -> None:
         self.tag = int(tag)
