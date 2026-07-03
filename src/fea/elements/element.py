@@ -44,6 +44,15 @@ class Element(ABC):
     def get_resisting_force(self) -> np.ndarray:
         """(n,) resisting force at the current trial state."""
 
+    def zero_loads(self) -> None:
+        """Clear any element loads before load patterns re-apply them."""
+
+    def add_load(self, load, factor: float) -> None:
+        """Receive one factored element load from a LoadPattern."""
+        raise ValueError(
+            f"{type(self).__name__} {self.tag} does not accept element "
+            f"load {type(load).__name__}")
+
     def commit_state(self) -> None:
         """Accept the current trial state as converged."""
 

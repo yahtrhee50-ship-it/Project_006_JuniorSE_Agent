@@ -13,6 +13,7 @@ from typing import Sequence, Tuple
 import numpy as np
 
 from src.fea.elements.element import Element
+from src.fea.loads.pattern import TrussStrainLoad
 from src.fea.materials.uniaxial import UniaxialMaterial
 
 
@@ -31,6 +32,7 @@ class Truss(Element):
         self.material = material
         self.L = 0.0
         self._g = np.zeros(0)   # unit vector i -> j (undeformed)
+        self._eps0 = 0.0        # initial (stress-free) strain from element loads
 
     def set_domain(self, domain) -> None:
         super().set_domain(domain)
@@ -48,13 +50,29 @@ class Truss(Element):
         trans = tuple(range(ndm))
         return (trans, trans)
 
+    # -- element loads ------------------------------------------------------
+
+    def zero_loads(self) -> None:
+        self._eps0 = 0.0
+
+    def add_load(self, load, factor: float) -> None:
+        """TrussStrainLoad: initial strain eps0 = delta_L0/L + alpha*dT.
+        The material sees the mechanical strain (total - eps0), so the
+        equivalent nodal loads (PlaneTruss's F0 = EA*eps0 pushing the ends
+        apart) emerge through the resisting force."""
+        if not isinstance(load, TrussStrainLoad):
+            super().add_load(load, factor)
+        self._eps0 += factor * (load.delta_L0 / self.L
+                                + load.alpha * load.delta_T)
+
     # -- state ------------------------------------------------------------
 
     def _trial_strain(self) -> float:
+        """Mechanical strain: total axis strain minus the initial strain."""
         ni, nj = self.nodes
         ndm = ni.ndm
         du = nj.get_trial_disp()[:ndm] - ni.get_trial_disp()[:ndm]
-        return float(self._g @ du) / self.L
+        return float(self._g @ du) / self.L - self._eps0
 
     def _b_vector(self) -> np.ndarray:
         """d(strain)/d(element dofs): [-g, g] / L."""

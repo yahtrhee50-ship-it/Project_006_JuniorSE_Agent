@@ -47,6 +47,8 @@ class LoadControl(Integrator):
                        soe: LinearSOE) -> None:
         """b = lambda * P_ref - F_resisting(trial u)."""
         soe.zero_b()
+        for elem in domain.elements():
+            elem.zero_loads()
         for pattern in domain.load_patterns():
-            pattern.apply(model, soe, domain.current_time)
+            pattern.apply(domain, model, soe, domain.current_time)
         model.assemble_resisting_force(domain, soe)

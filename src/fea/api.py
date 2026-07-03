@@ -31,7 +31,8 @@ from src.fea.analysis_model import AnalysisModel
 from src.fea.domain import Domain, Node
 from src.fea.elements.truss import Truss
 from src.fea.loads.pattern import (ConstantTimeSeries, LinearTimeSeries,
-                                   LoadPattern, NodalLoad, TimeSeries)
+                                   LoadPattern, NodalLoad, TimeSeries,
+                                   TrussStrainLoad)
 from src.fea.materials.uniaxial import ElasticMaterial, UniaxialMaterial
 from src.fea.numberer import PlainNumberer
 from src.fea.sections.section import ElasticSection, Section
@@ -118,6 +119,19 @@ class Model:
         if p is None:
             raise ValueError("No load pattern defined — call pattern() first")
         p.add_nodal_load(NodalLoad(node_tag, values))
+
+    def ele_load(self, ele_tag: int, *, delta_L0: float = 0.0,
+                 delta_T: float = 0.0, alpha: float = 0.0,
+                 pattern: Optional[int] = None) -> None:
+        """Truss initial-strain load: fabrication misfit delta_L0
+        (+ = fabricated too long) and/or thermal alpha * delta_T."""
+        self.domain.get_element(ele_tag)   # fail fast on a bad tag
+        p = (self.domain.get_load_pattern(pattern) if pattern is not None
+             else self._current_pattern)
+        if p is None:
+            raise ValueError("No load pattern defined — call pattern() first")
+        p.add_element_load(TrussStrainLoad(ele_tag, delta_L0=delta_L0,
+                                           delta_T=delta_T, alpha=alpha))
 
     # -- analysis -----------------------------------------------------------
 
