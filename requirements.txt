@@ -2,7 +2,8 @@
 # Install: C:\Python314\python.exe -m pip install -r requirements.txt
 
 mcp           # MCP Python SDK (FastMCP server)
-numpy         # matrix stiffness solver (beam_stiffness.py)
+numpy         # matrix stiffness solvers (calcs/) + FEA engine (src/fea)
+scipy         # optional sparse-solver path for src/fea (lazy import; engine runs on numpy alone)
 openpyxl      # AISC Excel -> JSON conversion (data/AISC/convert_aisc.py)
 pytest        # test suite
 
