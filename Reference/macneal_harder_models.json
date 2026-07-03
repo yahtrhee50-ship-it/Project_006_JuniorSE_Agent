@@ -1,0 +1,88 @@
+{
+  "suite": "MacNeal-Harder standard element accuracy tests (beam-relevant subset)",
+  "source": "R.H. MacNeal & R.L. Harder, 'A Proposed Standard Set of Problems to Test Finite Element Accuracy', Finite Elements in Analysis and Design 1 (1985) 3-20",
+  "cross_checked_against": [
+    "Altair OptiStruct verification OS-V:0720 Straight Cantilever Beam (targets 3.0e-5 / 0.1081 / 0.4321 / 0.03208)",
+    "Altair OptiStruct verification OS-V:0710 Curved Cantilever Beam (targets 0.08734 in-plane / 0.5022 out-of-plane)"
+  ],
+  "units": "consistent unit system (dimensionless per the paper; treat as in / lb / psi)",
+  "note": "Targets are the paper's theoretical values and INCLUDE shear deformation. A Bernoulli (Euler) frame element intentionally omits shear deformation: expected converged ratios vs target are 1.0000 (extension), 0.9991 (straight in-plane), ~1.014 (curved in-plane, target also reflects curved/thick-beam theory).",
+  "models": [
+    {
+      "id": "MH-SC",
+      "name": "Straight cantilever beam",
+      "geometry": {
+        "length": 6.0,
+        "width_in_plane": 0.2,
+        "depth_out_of_plane": 0.1,
+        "A": 0.02,
+        "I_in_plane": 6.6666666667e-05,
+        "I_out_of_plane": 1.6666666667e-05
+      },
+      "material": { "E": 10000000.0, "nu": 0.3 },
+      "support": "fully fixed at x=0, free at x=6.0",
+      "cases": [
+        {
+          "case": "extension",
+          "load": "unit axial force at tip",
+          "target_tip_displacement": 3.0e-05,
+          "runnable_2d": true,
+          "closed_form": "PL/AE = 1*6/(0.02*1e7) = 3.0e-5 exactly"
+        },
+        {
+          "case": "in_plane_shear",
+          "load": "unit transverse force at tip, in plane of the 0.2 dimension",
+          "target_tip_displacement": 0.1081,
+          "runnable_2d": true,
+          "closed_form": "PL^3/3EI = 0.10800 (bending only); +6PL/5GA = 0.10809 with shear"
+        },
+        {
+          "case": "out_of_plane_shear",
+          "load": "unit transverse force at tip, out of plane",
+          "target_tip_displacement": 0.4321,
+          "runnable_2d": false,
+          "deferred_until": "3D frame element (path A/C)"
+        },
+        {
+          "case": "twist",
+          "load": "unit torque at tip",
+          "target_tip_rotation": 0.03208,
+          "runnable_2d": false,
+          "deferred_until": "3D frame element with torsion (path A/C)"
+        }
+      ]
+    },
+    {
+      "id": "MH-CB",
+      "name": "Curved cantilever beam (90-degree arc)",
+      "geometry": {
+        "inner_radius": 4.12,
+        "outer_radius": 4.32,
+        "mean_radius": 4.22,
+        "arc_deg": 90.0,
+        "radial_depth_in_plane": 0.2,
+        "thickness_out_of_plane": 0.1,
+        "A": 0.02,
+        "I_in_plane": 6.6666666667e-05
+      },
+      "material": { "E": 10000000.0, "nu": 0.25 },
+      "support": "fully fixed at one end, free at the other",
+      "cases": [
+        {
+          "case": "in_plane_load",
+          "load": "unit force at tip, in plane, directed radially at the tip (perpendicular to the fixed-end tangent)",
+          "target_tip_displacement_in_load_dir": 0.08734,
+          "runnable_2d": true,
+          "closed_form": "Bernoulli bending+axial converged limit = pi*P*R^3/(4EI) + pi*P*R/(4EA) = 0.088551; ratio to target 1.0139 (target reflects shear/curved-beam theory)"
+        },
+        {
+          "case": "out_of_plane_load",
+          "load": "unit force at tip, out of plane",
+          "target_tip_displacement_in_load_dir": 0.5022,
+          "runnable_2d": false,
+          "deferred_until": "3D frame element with torsion (path A/C)"
+        }
+      ]
+    }
+  ]
+}
