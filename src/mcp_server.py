@@ -4,6 +4,8 @@ Junior SE MCP server (FastMCP, stdio).
 Exposes the deterministic structural-calc tools to Claude Code:
   Atomic   : get_section, find_lightest_W, solve_beam, check_beam, load_combos
   Workflow : design_beam  (load combos -> stiffness solve -> AISC check -> archive)
+  SAP2000  : sap_* bridge tools (HTTP -> Project_005 REST API; see
+             src/agent/sap2000_tools.py; imperial kip_ft models only)
 
 Run:  C:\\Python314\\python.exe src/mcp_server.py   (stdio transport)
 
@@ -27,6 +29,7 @@ from src.calcs import rebar as _rebar
 from src.calcs import aci318
 from src.calcs import truss_stiffness as _truss
 from src.agent import project as proj
+from src.agent import sap2000_tools
 
 # stderr-only logging (never stdout)
 logging.basicConfig(level=logging.INFO, stream=sys.stderr,
@@ -41,6 +44,9 @@ _PERSONA = (Path(__file__).resolve().parent / "agent" / "prompts" / "junior_se.m
 )
 
 mcp = FastMCP("junior-se", instructions=_PERSONA)
+
+# SAP2000 bridge tools (HTTP wrappers over Project_005's REST API; imperial).
+sap2000_tools.register(mcp)
 
 
 # ---------------------------------------------------------------------------

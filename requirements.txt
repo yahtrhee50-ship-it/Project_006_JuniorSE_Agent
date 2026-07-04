@@ -6,6 +6,4 @@ numpy         # matrix stiffness solvers (calcs/) + FEA engine (src/fea)
 scipy         # optional sparse-solver path for src/fea (lazy import; engine runs on numpy alone)
 openpyxl      # AISC Excel -> JSON conversion (data/AISC/convert_aisc.py)
 pytest        # test suite
-
-# Deferred (future SAP2000 / Project_005 HTTP bridge — out of scope this phase):
-# requests
+httpx         # SAP2000 bridge tools -> Project_005 REST API (also an mcp dependency)
