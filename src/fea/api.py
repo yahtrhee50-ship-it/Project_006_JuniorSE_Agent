@@ -97,7 +97,11 @@ class Model:
             elem = Truss(tag, node_tags, A=props["A"], material=mat)
         elif kind == "Frame":
             sec = self._sections[props["section"]]
-            elem = Frame(tag, node_tags, section=sec)
+            elem = Frame(tag, node_tags, section=sec,
+                         release_i=props.get("release_i", False),
+                         release_j=props.get("release_j", False),
+                         offset_i=props.get("offset_i", (0.0, 0.0)),
+                         offset_j=props.get("offset_j", (0.0, 0.0)))
         else:
             raise ValueError(f"Unknown element '{kind}'")
         self.domain.add_element(elem)

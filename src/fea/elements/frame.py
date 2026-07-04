@@ -16,6 +16,15 @@ verified against Hibbeler Ch 15). Because the element is linear and these
 loads are constant (state-independent), get_resisting_force is affine in
 displacement and get_tangent_stiff is its exact derivative.
 
+Member end moment releases (release_i / release_j) are handled by static
+condensation of the released rz DOFs out of the local stiffness and
+equivalent-load vector, so a released end carries exactly zero moment and
+interior element-load effects redistribute consistently. Rigid end offsets
+(offset_i / offset_j, GLOBAL vectors from the node to the flexible member
+end) are handled by a rigid-link kinematic transform W per node; the
+element's length and orientation come from the offset end coordinates, and
+element loads span only the flexible length.
+
 Phase-1 scope is the 2D in-plane case (Hibbeler Ch 16 oracle); the 3D
 6-DOF upgrade (biaxial bending + torsion) is deferred, see
 docs/fea_engine_plan.md's Phase 1 frame.py note.
@@ -64,15 +73,24 @@ class Frame(Element):
     """2-node, 3-DOF/node (ux, uy, rz) linear elastic 2D frame element."""
 
     def __init__(self, tag: int, node_tags: Sequence[int],
-                 section: ElasticSection) -> None:
+                 section: ElasticSection,
+                 release_i: bool = False, release_j: bool = False,
+                 offset_i: Sequence[float] = (0.0, 0.0),
+                 offset_j: Sequence[float] = (0.0, 0.0)) -> None:
         super().__init__(tag, node_tags)
         if len(self.node_tags) != 2:
             raise ValueError(f"Frame {tag}: needs exactly 2 nodes")
         self.section = section
+        self._released = tuple(idx for idx, rel in ((2, release_i), (5, release_j)) if rel)
+        self._offset_i = np.asarray(offset_i, dtype=float)
+        self._offset_j = np.asarray(offset_j, dtype=float)
+        if self._offset_i.shape != (2,) or self._offset_j.shape != (2,):
+            raise ValueError(f"Frame {tag}: offsets must be 2D global (dx, dy) vectors")
         self.L = 0.0
         self._cx = 0.0
         self._cy = 0.0
         self._T = np.zeros((6, 6))
+        self._W = np.eye(6)      # rigid-link node -> flexible-end kinematics
         self._q0 = np.zeros(6)   # local equivalent nodal loads
 
     def set_domain(self, domain) -> None:
@@ -80,10 +98,12 @@ class Frame(Element):
         ni, nj = self.nodes
         if ni.ndm != 2 or nj.ndm != 2:
             raise ValueError(f"Frame {self.tag}: needs 2D (ndm=2) nodes")
-        dx = nj.coords - ni.coords
+        end_i = ni.coords + self._offset_i
+        end_j = nj.coords + self._offset_j
+        dx = end_j - end_i
         self.L = float(np.linalg.norm(dx))
         if self.L == 0.0:
-            raise ValueError(f"Frame {self.tag}: zero length")
+            raise ValueError(f"Frame {self.tag}: zero flexible length")
         self._cx, self._cy = dx / self.L
         r = np.array([
             [ self._cx, self._cy, 0.0],
@@ -94,6 +114,14 @@ class Frame(Element):
         T[:3, :3] = r
         T[3:, 3:] = r
         self._T = T
+        # Rigid link: u_end = u_node + rz x offset  (2D cross product), so
+        # per-node block [[1, 0, -oy], [0, 1, ox], [0, 0, 1]] in GLOBAL axes.
+        W = np.eye(6)
+        W[0, 2] = -self._offset_i[1]
+        W[1, 2] = self._offset_i[0]
+        W[3, 5] = -self._offset_j[1]
+        W[4, 5] = self._offset_j[0]
+        self._W = W
 
     def get_node_dofs(self) -> Sequence[Sequence[int]]:
         return ((0, 1, 2), (0, 1, 2))
@@ -112,10 +140,27 @@ class Frame(Element):
                 k[ia, ic] += b[a, c]
         return k
 
+    def _condensed(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Local stiffness and equivalent-load vector with released rz DOFs
+        statically condensed out (zero rows/cols and zero load at releases,
+        so a released end carries exactly zero moment)."""
+        k = self._k_local()
+        q = self._q0
+        if not self._released:
+            return k, q
+        e = list(self._released)
+        r = [i for i in range(6) if i not in self._released]
+        kee_inv = np.linalg.inv(k[np.ix_(e, e)])
+        k_cond = np.zeros((6, 6))
+        k_cond[np.ix_(r, r)] = k[np.ix_(r, r)] - k[np.ix_(r, e)] @ kee_inv @ k[np.ix_(e, r)]
+        q_cond = np.zeros(6)
+        q_cond[r] = q[r] - k[np.ix_(r, e)] @ kee_inv @ q[e]
+        return k_cond, q_cond
+
     def _disp_local(self) -> np.ndarray:
         ni, nj = self.nodes
         d_global = np.concatenate([ni.get_trial_disp()[:3], nj.get_trial_disp()[:3]])
-        return self._T @ d_global
+        return self._T @ (self._W @ d_global)
 
     # -- element loads ----------------------------------------------------------
 
@@ -159,15 +204,19 @@ class Frame(Element):
 
     def get_local_forces(self) -> np.ndarray:
         """Local basic forces [N1, V1, M1, N2, V2, M2] (member convention:
-        local x axial, local y transverse, moments CCW+ matching rz)."""
+        local x axial, local y transverse, moments CCW+ matching rz).
+        Released end moments are exactly zero."""
         v_local = self._disp_local()
-        return self._k_local() @ v_local - self._q0
+        k_cond, q_cond = self._condensed()
+        return k_cond @ v_local - q_cond
 
     def get_resisting_force(self) -> np.ndarray:
-        return self._T.T @ self.get_local_forces()
+        return self._W.T @ (self._T.T @ self.get_local_forces())
 
     def get_tangent_stiff(self) -> np.ndarray:
-        return self._T.T @ self._k_local() @ self._T
+        TW = self._T @ self._W
+        k_cond, _ = self._condensed()
+        return TW.T @ k_cond @ TW
 
     # -- responses ----------------------------------------------------------
 
