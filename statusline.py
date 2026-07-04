@@ -133,13 +133,15 @@ def context_used_tokens(transcript_path: str):
     return latest
 
 
-def render(used_pct, model_name):
+def render(used_pct, model_name, project_dir):
     label = f"{used_pct:.0f}%" if used_pct is not None else "--%"
     pct_for_bar = used_pct if used_pct is not None else 0.0
     bar = make_bar(pct_for_bar)
     color = pick_color(pct_for_bar) if used_pct is not None else GREEN
     name = f" {DIM}{model_name}{RESET}" if model_name else ""
-    sys.stdout.write(f"{color}{bar} {label}{RESET}{name}")
+    folder = os.path.basename(project_dir) or project_dir
+    dir_part = f" {DIM}{folder}{RESET}" if project_dir else ""
+    sys.stdout.write(f"{color}{bar} {label}{RESET}{name}{dir_part}")
     sys.stdout.flush()
 
 
@@ -151,6 +153,8 @@ def main() -> None:
         data = {}
 
     model_name = (data.get("model") or {}).get("display_name") or ""
+    workspace = data.get("workspace") or {}
+    project_dir = workspace.get("project_dir") or workspace.get("current_dir") or data.get("cwd") or ""
 
     # Preferred: an explicit percentage if a future payload ever provides one.
     used_pct = (data.get("context_window") or {}).get("used_percentage")
@@ -162,7 +166,7 @@ def main() -> None:
             limit = 1_000_000 if data.get("exceeds_200k_tokens") else DEFAULT_CONTEXT
             used_pct = min(100.0, used / limit * 100.0)
 
-    render(used_pct, model_name)
+    render(used_pct, model_name, project_dir)
 
 
 if __name__ == "__main__":
