@@ -42,6 +42,8 @@ from src.fea import combos as _combos
 from src.fea.system.soe import DenseSolver, LinearSOE, SparseSolver
 from src.fea.analysis.static_analysis import StaticAnalysis
 from src.fea.constraints.sp import SP_Constraint
+from src.fea.constraints.mp import (TransformationHandler, equal_dof,
+                                    rigid_link)
 
 
 class Model:
@@ -62,10 +64,26 @@ class Model:
 
     # -- model building ----------------------------------------------------
 
-    def node(self, tag: int, *coords: float, ndf: Optional[int] = None) -> None:
+    def node(self, tag: int, *coords: float, ndf: Optional[int] = None,
+             axes=None) -> None:
+        """axes: skew nodal axes — an angle in DEGREES (2D: rotates the
+        ux/uy pair CCW from global x; rotational DOFs unchanged) or a full
+        ndf x ndf rotation matrix. Equations and fix() flags at this node
+        then live in the rotated frame (e.g. inclined roller = fix the
+        rotated normal DOF)."""
         if len(coords) != self.ndm:
             raise ValueError(f"node {tag}: expected {self.ndm} coordinates")
-        self.domain.add_node(Node(tag, coords, ndf if ndf else self.ndf))
+        n_dof = ndf if ndf else self.ndf
+        if axes is not None and np.isscalar(axes):
+            if self.ndm != 2:
+                raise NotImplementedError(
+                    "angle-form skew axes are 2D only; pass a full matrix")
+            a = np.radians(float(axes))
+            c, s = np.cos(a), np.sin(a)
+            R = np.eye(n_dof)
+            R[:2, :2] = [[c, -s], [s, c]]
+            axes = R
+        self.domain.add_node(Node(tag, coords, n_dof, axes=axes))
 
     def fix(self, node_tag: int, *flags: int) -> None:
         """fix(tag, 1, 1, ...) — one 0/1 flag per node DOF (1 = fixed)."""
@@ -80,6 +98,23 @@ class Model:
     def sp(self, node_tag: int, dof: int, value: float) -> None:
         """Prescribe a support displacement (settlement) on one DOF."""
         self.domain.add_sp_constraint(SP_Constraint(node_tag, dof, value))
+
+    def equal_dof(self, retained_tag: int, constrained_tag: int,
+                  *dofs: int) -> None:
+        """Slave the given DOFs of `constrained_tag` to the same DOFs of
+        `retained_tag` (identity MP coupling)."""
+        if not dofs:
+            raise ValueError("equal_dof: give at least one dof index")
+        self.domain.add_mp_constraint(
+            equal_dof(retained_tag, constrained_tag, dofs))
+
+    def rigid_link(self, kind: str, retained_tag: int,
+                   constrained_tag: int) -> None:
+        """Rigid link ('beam' = translations + rotation, 'bar' =
+        translations only) slaving `constrained_tag` to `retained_tag`."""
+        self.domain.add_mp_constraint(
+            rigid_link(kind, self.domain.get_node(retained_tag),
+                       self.domain.get_node(constrained_tag)))
 
     def uniaxial_material(self, kind: str, tag: int, **props) -> None:
         if kind == "Elastic":
@@ -173,8 +208,10 @@ class Model:
         solver = SparseSolver() if self._solver_name == "Sparse" else DenseSolver()
         numberer = (RCMNumberer() if self._numberer_name == "RCM"
                     else PlainNumberer())
-        analysis = StaticAnalysis(self.domain, numberer=numberer,
-                                  soe=LinearSOE(solver))
+        handler = (TransformationHandler()
+                   if self.domain.has_mp_constraints() else None)
+        analysis = StaticAnalysis(self.domain, constraint_handler=handler,
+                                  numberer=numberer, soe=LinearSOE(solver))
         self._analysis_model = analysis.analyze(num_steps)
 
     def analyze_cases(self, cases: Dict[str, "list[int] | int"]
@@ -206,6 +243,16 @@ class Model:
 
     def node_reaction(self, tag: int, dof: Optional[int] = None):
         r = self.domain.get_node(tag).reaction.copy()
+        return float(r[dof]) if dof is not None else r
+
+    def node_reaction_local(self, tag: int, dof: Optional[int] = None):
+        """Reaction rotated into the node's skew axes (e.g. the normal
+        force of an inclined roller). Identical to node_reaction for a
+        node without skew axes."""
+        node = self.domain.get_node(tag)
+        r = node.reaction.copy()
+        if node.axes is not None:
+            r = node.axes.T @ r
         return float(r[dof]) if dof is not None else r
 
     def ele_force(self, tag: int) -> np.ndarray:

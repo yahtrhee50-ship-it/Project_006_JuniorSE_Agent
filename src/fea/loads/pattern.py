@@ -109,7 +109,7 @@ class LoadPattern:
         zeroed via zero_loads() before any pattern applies)."""
         factor = self.time_series.get_factor(time)
         for load in self.nodal_loads:
-            soe.add_vector(factor * load.values,
-                           model.eq_numbers(load.node_tag))
+            model.add_nodal_load_to_rhs(soe, load.node_tag,
+                                        factor * load.values)
         for eload in self.element_loads:
             domain.get_element(eload.ele_tag).add_load(eload, factor)

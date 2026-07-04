@@ -21,14 +21,28 @@ class Node:
     coords : spatial coordinates, length = ndm (2 or 3)
     ndf    : number of DOFs carried by this node (2 = 2D truss node,
              3 = 2D frame node, 6 = 3D frame node, ...)
+    axes   : optional ndf x ndf rotation matrix R (nodal-local -> global,
+             columns = local axes in global coords). When set, this node's
+             *equations and SP constraints* live in the rotated (nodal-local)
+             frame — e.g. an inclined roller is a plain fix of the rotated
+             normal DOF — while trial displacements, loads, and reactions
+             stay in GLOBAL components as everywhere else.
     """
 
-    def __init__(self, tag: int, coords, ndf: int) -> None:
+    def __init__(self, tag: int, coords, ndf: int, axes=None) -> None:
         self.tag = int(tag)
         self.coords = np.asarray(coords, dtype=float)
         self.ndf = int(ndf)
         if self.ndf < 1:
             raise ValueError(f"Node {tag}: ndf must be >= 1")
+        if axes is not None:
+            axes = np.asarray(axes, dtype=float)
+            if axes.shape != (self.ndf, self.ndf):
+                raise ValueError(
+                    f"Node {tag}: axes must be {self.ndf}x{self.ndf}")
+            if not np.allclose(axes.T @ axes, np.eye(self.ndf)):
+                raise ValueError(f"Node {tag}: axes must be orthonormal")
+        self.axes = axes
         self._trial_disp = np.zeros(self.ndf)
         self._committed_disp = np.zeros(self.ndf)
         self.mass = np.zeros(self.ndf)
@@ -82,6 +96,7 @@ class Domain:
         self._nodes: Dict[int, Node] = {}
         self._elements: Dict[int, "Element"] = {}
         self._sp_constraints: List["SP_Constraint"] = []
+        self._mp_constraints: List["MP_Constraint"] = []
         self._patterns: Dict[int, "LoadPattern"] = {}
         # None = all patterns active; else only these tags load the model.
         self._active_pattern_tags: "List[int] | None" = None
@@ -107,6 +122,21 @@ class Domain:
                 f"SP constraint on node {sp.node_tag}: dof {sp.dof} out of "
                 f"range for ndf={node.ndf}")
         self._sp_constraints.append(sp)
+
+    def add_mp_constraint(self, mp) -> None:
+        r = self.get_node(mp.retained_tag)
+        c = self.get_node(mp.constrained_tag)
+        for dof in mp.retained_dofs:
+            if not 0 <= dof < r.ndf:
+                raise ValueError(
+                    f"MP constraint: retained dof {dof} out of range for "
+                    f"node {r.tag} (ndf={r.ndf})")
+        for dof in mp.constrained_dofs:
+            if not 0 <= dof < c.ndf:
+                raise ValueError(
+                    f"MP constraint: constrained dof {dof} out of range for "
+                    f"node {c.tag} (ndf={c.ndf})")
+        self._mp_constraints.append(mp)
 
     def add_load_pattern(self, pattern) -> None:
         if pattern.tag in self._patterns:
@@ -147,6 +177,12 @@ class Domain:
 
     def sp_constraints(self) -> Iterable:
         return iter(self._sp_constraints)
+
+    def mp_constraints(self) -> Iterable:
+        return iter(self._mp_constraints)
+
+    def has_mp_constraints(self) -> bool:
+        return bool(self._mp_constraints)
 
     def load_patterns(self) -> Iterable:
         """Active load patterns (all of them unless set_active_patterns

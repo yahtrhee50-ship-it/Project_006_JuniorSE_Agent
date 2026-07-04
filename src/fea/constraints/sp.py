@@ -9,8 +9,8 @@ PlainHandler implements SP elimination: constrained DOFs get no equation
 number; their prescribed values are imposed on node trial displacements so
 element resisting forces carry the coupling to the free DOFs.
 
-Multi-point constraints (rigid diaphragm, equalDOF) arrive in Phase 2 via a
-transformation handler.
+Multi-point constraints (equalDOF, rigid links) are handled by the
+TransformationHandler in constraints/mp.py (Phase 2).
 """
 from __future__ import annotations
 
@@ -37,17 +37,28 @@ class ConstraintHandler(ABC):
         """Build the equation numbering in `model`, honoring constraints."""
 
 
+def collect_sp_values(domain: Domain) -> Dict[Tuple[int, int], float]:
+    """Gather SP constraints into {(node_tag, dof): value}, rejecting
+    conflicting prescriptions of the same DOF."""
+    constrained: Dict[Tuple[int, int], float] = {}
+    for sp in domain.sp_constraints():
+        key = (sp.node_tag, sp.dof)
+        if key in constrained and constrained[key] != sp.value:
+            raise ValueError(
+                f"Conflicting SP constraints on node {sp.node_tag} "
+                f"dof {sp.dof}")
+        constrained[key] = sp.value
+    return constrained
+
+
 class PlainHandler(ConstraintHandler):
     """Handles SP constraints only, by elimination."""
 
     def handle(self, domain: Domain, model: AnalysisModel,
                numberer: DOF_Numberer) -> None:
-        constrained: Dict[Tuple[int, int], float] = {}
-        for sp in domain.sp_constraints():
-            key = (sp.node_tag, sp.dof)
-            if key in constrained and constrained[key] != sp.value:
-                raise ValueError(
-                    f"Conflicting SP constraints on node {sp.node_tag} "
-                    f"dof {sp.dof}")
-            constrained[key] = sp.value
-        model.build(domain, constrained, numberer.node_order(domain))
+        if domain.has_mp_constraints():
+            raise ValueError(
+                "Model has MP constraints — use TransformationHandler "
+                "(src.fea.constraints.mp), not PlainHandler")
+        model.build(domain, collect_sp_values(domain),
+                    numberer.node_order(domain))
