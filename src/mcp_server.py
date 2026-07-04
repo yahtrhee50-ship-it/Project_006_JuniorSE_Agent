@@ -955,6 +955,59 @@ def solve_truss(
     return "\n".join(lines)
 
 
+# ===========================================================================
+# FEA engine tool (src/fea — general linear-static solver)
+# ===========================================================================
+
+@mcp.tool()
+def solve_model(
+    nodes: list[dict],
+    elements: list[dict],
+    sections: list[dict] | None = None,
+    materials: list[dict] | None = None,
+    nodal_loads: list[dict] | None = None,
+    ele_loads: list[dict] | None = None,
+    ndf: int = 3,
+    numberer: str = "Plain",
+) -> str:
+    """General 2D linear-static FE solve (frames, beams, trusses — src/fea).
+
+    Use this for anything beyond a single simply-supported span: portal
+    frames, continuous beams, mixed frame/truss models, member releases,
+    rigid end offsets. Results include a global statics check (sum F, sum M);
+    never trust output whose equilibrium line is not OK.
+
+    Args:
+        nodes: [{"id", "x", "y", "fix": [ux, uy, rz]}] — fix flags optional,
+            1 = restrained (rz flag only when ndf=3).
+        elements: [{"id", "type": "Frame", "i", "j", "section",
+            "release_i"/"release_j" (bool moment releases),
+            "offset_i"/"offset_j" ([dx, dy] rigid end offsets)}] or
+            [{"id", "type": "Truss", "i", "j", "A", "mat"}].
+        sections: [{"id", "E", "A", "I"}] for Frame elements.
+        materials: [{"id", "E"}] for Truss elements.
+        nodal_loads: [{"node", "Fx", "Fy", "Mz"}].
+        ele_loads: uniform {"element", "wx", "wy"} (global, full length);
+            point {"element", "Px", "Py", "distance_from_i"};
+            truss strain {"element", "delta_L0"} or {"delta_T", "alpha"}.
+        ndf: 3 (frame DOFs ux, uy, rz — default) or 2 (truss-only).
+        numberer: "Plain" or "RCM" (bandwidth reduction for big models).
+
+    Units: one consistent set — imperial convention: kips, inches, ksi
+    (E = 29000 ksi steel), results in kips / inches / kip-in.
+    """
+    from src.fea.json_solve import solve_model_json
+    try:
+        return solve_model_json(nodes, elements, sections=sections,
+                                materials=materials, nodal_loads=nodal_loads,
+                                ele_loads=ele_loads, ndf=ndf,
+                                numberer=numberer)
+    except NotImplementedError as e:
+        return f"ESCALATE TO SENIOR ENGINEER: {e}"
+    except (KeyError, TypeError, ValueError) as e:
+        return f"INPUT ERROR: {e}"
+
+
 if __name__ == "__main__":
     log.info("starting junior-se MCP server (stdio)")
     mcp.run()

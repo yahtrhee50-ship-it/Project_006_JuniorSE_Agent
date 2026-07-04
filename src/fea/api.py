@@ -36,8 +36,9 @@ from src.fea.loads.pattern import (ConstantTimeSeries, FramePointLoad,
                                    LoadPattern, NodalLoad, TimeSeries,
                                    TrussStrainLoad)
 from src.fea.materials.uniaxial import ElasticMaterial, UniaxialMaterial
-from src.fea.numberer import PlainNumberer
+from src.fea.numberer import PlainNumberer, RCMNumberer
 from src.fea.sections.section import ElasticSection, Section
+from src.fea import combos as _combos
 from src.fea.system.soe import DenseSolver, LinearSOE, SparseSolver
 from src.fea.analysis.static_analysis import StaticAnalysis
 from src.fea.constraints.sp import SP_Constraint
@@ -56,6 +57,7 @@ class Model:
         self._sections: Dict[int, Section] = {}
         self._current_pattern: Optional[LoadPattern] = None
         self._solver_name = "Dense"
+        self._numberer_name = "Plain"
         self._analysis_model: Optional[AnalysisModel] = None
 
     # -- model building ----------------------------------------------------
@@ -161,10 +163,40 @@ class Model:
             raise ValueError(f"Unknown system '{name}'")
         self._solver_name = name
 
+    def numberer(self, name: str) -> None:
+        """'Plain' (tag order, default) or 'RCM' (bandwidth-reducing)."""
+        if name not in ("Plain", "RCM"):
+            raise ValueError(f"Unknown numberer '{name}'")
+        self._numberer_name = name
+
     def analyze(self, num_steps: int = 1) -> None:
         solver = SparseSolver() if self._solver_name == "Sparse" else DenseSolver()
-        analysis = StaticAnalysis(self.domain, soe=LinearSOE(solver))
+        numberer = (RCMNumberer() if self._numberer_name == "RCM"
+                    else PlainNumberer())
+        analysis = StaticAnalysis(self.domain, numberer=numberer,
+                                  soe=LinearSOE(solver))
         self._analysis_model = analysis.analyze(num_steps)
+
+    def analyze_cases(self, cases: Dict[str, "list[int] | int"]
+                      ) -> Dict[str, _combos.CaseResults]:
+        """Solve each load case (name -> pattern tag(s)) independently and
+        return frozen CaseResults per case. Each run starts from a wiped
+        response state; the model is left reset with all patterns active.
+        Combine with src.fea.combos.combine / envelope (linear analysis)."""
+        if not cases:
+            raise ValueError("analyze_cases: no cases given")
+        results: Dict[str, _combos.CaseResults] = {}
+        try:
+            for name, tags in cases.items():
+                tag_list = [tags] if isinstance(tags, int) else list(tags)
+                self.domain.reset()
+                self.domain.set_active_patterns(tag_list)
+                self.analyze(1)
+                results[name] = _combos.snapshot(self.domain, name)
+        finally:
+            self.domain.set_active_patterns(None)
+            self.domain.reset()
+        return results
 
     # -- results --------------------------------------------------------------
 

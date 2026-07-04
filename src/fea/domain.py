@@ -83,6 +83,8 @@ class Domain:
         self._elements: Dict[int, "Element"] = {}
         self._sp_constraints: List["SP_Constraint"] = []
         self._patterns: Dict[int, "LoadPattern"] = {}
+        # None = all patterns active; else only these tags load the model.
+        self._active_pattern_tags: "List[int] | None" = None
         self.current_time = 0.0
 
     # -- add / get ---------------------------------------------------------
@@ -147,7 +149,33 @@ class Domain:
         return iter(self._sp_constraints)
 
     def load_patterns(self) -> Iterable:
-        return self._patterns.values()
+        """Active load patterns (all of them unless set_active_patterns
+        narrowed the set — used to run one load case at a time)."""
+        if self._active_pattern_tags is None:
+            return self._patterns.values()
+        return [self._patterns[t] for t in self._active_pattern_tags]
+
+    def set_active_patterns(self, tags: "List[int] | None") -> None:
+        """Restrict loading to the given pattern tags (None = all active)."""
+        if tags is not None:
+            missing = [t for t in tags if t not in self._patterns]
+            if missing:
+                raise KeyError(f"No load pattern with tag(s) {missing}")
+            tags = list(tags)
+        self._active_pattern_tags = tags
+
+    def reset(self) -> None:
+        """Wipe the response state (not the model): zero all node trial and
+        committed displacements and reactions, zero element loads, commit the
+        zero state, and rewind pseudo-time. Used between load-case runs."""
+        for node in self._nodes.values():
+            node.set_trial_disp(np.zeros(node.ndf))
+            node.reaction = np.zeros(node.ndf)
+            node.commit_state()
+        for elem in self._elements.values():
+            elem.zero_loads()
+            elem.commit_state()
+        self.current_time = 0.0
 
     # -- state -------------------------------------------------------------
 
