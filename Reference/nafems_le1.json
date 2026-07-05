@@ -1,0 +1,30 @@
+{
+  "benchmark": "NAFEMS LE1 — Elliptic membrane (plane stress)",
+  "provenance": {
+    "primary_source": "NAFEMS, 'The Standard NAFEMS Benchmarks', TNSB Rev. 3 (1990), test LE1. Publication is paywalled; the engineer may supply the PDF into Reference/NAFEMS/ when obtained.",
+    "secondary_sources": [
+      "Abaqus Benchmarks Manual, 'Elliptic membrane under uniform outward pressure' (NAFEMS LE1)",
+      "Altair OptiStruct Verification Manual, OS-V: NAFEMS LE1 elliptic membrane",
+      "Code_Aster validation suite (NAFEMS LE1 reproduction)"
+    ],
+    "note": "Geometry, material, loading, and the 92.7 MPa target value agree across all listed secondary sources; recorded 2026-07-05 for src/fea Phase 2 Step 2 (plane-stress Quad4)."
+  },
+  "units": {"length": "m", "stress": "MPa", "consistent_note": "E and the edge load are entered in MPa with lengths in m; all recovered stresses are then in MPa directly (thickness cancels in plane stress)."},
+  "geometry": {
+    "description": "Quarter model (symmetric) of an elliptic membrane: region between the inner ellipse (x/2.0)^2 + (y/1.0)^2 = 1 and the outer ellipse (x/3.25)^2 + (y/2.75)^2 = 1, first quadrant.",
+    "inner_ellipse_semi_axes": [2.0, 1.0],
+    "outer_ellipse_semi_axes": [3.25, 2.75],
+    "thickness": 0.1,
+    "point_D": [2.0, 0.0]
+  },
+  "material": {"type": "isotropic elastic, plane stress", "E_MPa": 210000.0, "nu": 0.3},
+  "boundary_conditions": {
+    "edge_y0": "uy = 0 on the y = 0 symmetry edge (from (2.0, 0) to (3.25, 0))",
+    "edge_x0": "ux = 0 on the x = 0 symmetry edge (from (0, 1.0) to (0, 2.75))"
+  },
+  "loading": "Uniform OUTWARD normal traction (tension) of 10 MPa on the outer elliptic edge; inner edge free.",
+  "target": {
+    "quantity": "sigma_yy at point D (2.0, 0.0), the inner-ellipse point on the x axis",
+    "value_MPa": 92.7
+  }
+}

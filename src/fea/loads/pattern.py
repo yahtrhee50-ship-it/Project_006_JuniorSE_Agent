@@ -90,6 +90,35 @@ class FramePointLoad(ElementLoad):
         self.distance_from_i = float(distance_from_i)
 
 
+class QuadBodyLoad(ElementLoad):
+    """Body force (bx, by) per unit VOLUME in GLOBAL directions on a 2D
+    continuum element (e.g. self-weight by = -unit_weight). The element
+    converts it to consistent nodal loads with its own shape functions and
+    thickness."""
+
+    def __init__(self, ele_tag: int, bx: float = 0.0, by: float = 0.0) -> None:
+        super().__init__(ele_tag)
+        self.bx = float(bx)
+        self.by = float(by)
+
+
+class QuadEdgeLoad(ElementLoad):
+    """Constant traction per unit AREA on one edge of a 2D continuum
+    element. edge = local edge index (edge k runs local node k -> k+1,
+    CCW). Components: (tx, ty) in GLOBAL directions, plus `pressure`
+    along the edge's outward normal with POSITIVE = pushing INWARD on the
+    element (classic pressure); use a negative pressure for an outward
+    (tension) load such as NAFEMS LE1's outer-edge loading."""
+
+    def __init__(self, ele_tag: int, edge: int, tx: float = 0.0,
+                 ty: float = 0.0, pressure: float = 0.0) -> None:
+        super().__init__(ele_tag)
+        self.edge = int(edge)
+        self.tx = float(tx)
+        self.ty = float(ty)
+        self.pressure = float(pressure)
+
+
 class LoadPattern:
     def __init__(self, tag: int, time_series: TimeSeries) -> None:
         self.tag = int(tag)

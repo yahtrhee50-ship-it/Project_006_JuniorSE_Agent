@@ -30,11 +30,13 @@ import numpy as np
 from src.fea.analysis_model import AnalysisModel
 from src.fea.domain import Domain, Node
 from src.fea.elements.frame import Frame
+from src.fea.elements.quad4 import Quad4
 from src.fea.elements.truss import Truss
 from src.fea.loads.pattern import (ConstantTimeSeries, FramePointLoad,
                                    FrameUniformLoad, LinearTimeSeries,
-                                   LoadPattern, NodalLoad, TimeSeries,
-                                   TrussStrainLoad)
+                                   LoadPattern, NodalLoad, QuadBodyLoad,
+                                   QuadEdgeLoad, TimeSeries, TrussStrainLoad)
+from src.fea.materials.nd import ElasticIsotropic, NDMaterial
 from src.fea.materials.uniaxial import ElasticMaterial, UniaxialMaterial
 from src.fea.numberer import PlainNumberer, RCMNumberer
 from src.fea.sections.section import ElasticSection, Section
@@ -56,6 +58,7 @@ class Model:
         self.ndf = ndf
         self.domain = Domain()
         self._materials: Dict[int, UniaxialMaterial] = {}
+        self._nd_materials: Dict[int, NDMaterial] = {}
         self._sections: Dict[int, Section] = {}
         self._current_pattern: Optional[LoadPattern] = None
         self._solver_name = "Dense"
@@ -122,6 +125,17 @@ class Model:
         else:
             raise ValueError(f"Unknown uniaxial material '{kind}'")
 
+    def nd_material(self, kind: str, tag: int, **props) -> None:
+        """Multi-dimensional material, e.g.
+        nd_material("ElasticIsotropic", 1, E=29000.0, nu=0.3,
+        formulation="plane_stress")."""
+        if kind == "ElasticIsotropic":
+            self._nd_materials[tag] = ElasticIsotropic(
+                tag, E=props["E"], nu=props["nu"],
+                formulation=props.get("formulation", "plane_stress"))
+        else:
+            raise ValueError(f"Unknown nd material '{kind}'")
+
     def section(self, kind: str, tag: int, **props) -> None:
         if kind == "Elastic":
             self._sections[tag] = ElasticSection(tag, **props)
@@ -139,6 +153,9 @@ class Model:
                          release_j=props.get("release_j", False),
                          offset_i=props.get("offset_i", (0.0, 0.0)),
                          offset_j=props.get("offset_j", (0.0, 0.0)))
+        elif kind == "Quad4":
+            mat = self._nd_materials[props["mat"]]
+            elem = Quad4(tag, node_tags, material=mat, t=props["t"])
         else:
             raise ValueError(f"Unknown element '{kind}'")
         self.domain.add_element(elem)
@@ -171,10 +188,16 @@ class Model:
                  wx: float = 0.0, wy: float = 0.0,
                  Px: float = 0.0, Py: float = 0.0,
                  distance_from_i: Optional[float] = None,
+                 bx: float = 0.0, by: float = 0.0,
+                 edge: Optional[int] = None,
+                 tx: float = 0.0, ty: float = 0.0, pressure: float = 0.0,
                  pattern: Optional[int] = None) -> None:
-        """Truss initial-strain load (delta_L0 / delta_T*alpha) or Frame
-        element load: uniform (wx, wy) over the full length, or a point
-        load (Px, Py) at distance_from_i — all in GLOBAL components."""
+        """Truss initial-strain load (delta_L0 / delta_T*alpha), Frame
+        load (uniform wx/wy, or point Px/Py at distance_from_i), or Quad4
+        load (body force bx/by per unit volume, or edge traction on local
+        edge index `edge`: global tx/ty per unit area and/or `pressure`
+        along the outward normal, + = pushing inward) — all in GLOBAL
+        components."""
         elem = self.domain.get_element(ele_tag)
         p = (self.domain.get_load_pattern(pattern) if pattern is not None
              else self._current_pattern)
@@ -186,6 +209,12 @@ class Model:
                     ele_tag, Px=Px, Py=Py, distance_from_i=distance_from_i))
             else:
                 p.add_element_load(FrameUniformLoad(ele_tag, wx=wx, wy=wy))
+        elif isinstance(elem, Quad4):
+            if edge is not None:
+                p.add_element_load(QuadEdgeLoad(
+                    ele_tag, edge=edge, tx=tx, ty=ty, pressure=pressure))
+            else:
+                p.add_element_load(QuadBodyLoad(ele_tag, bx=bx, by=by))
         else:
             p.add_element_load(TrussStrainLoad(ele_tag, delta_L0=delta_L0,
                                                delta_T=delta_T, alpha=alpha))
