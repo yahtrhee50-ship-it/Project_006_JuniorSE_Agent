@@ -169,6 +169,38 @@ class ShellBodyLoad(ElementLoad):
         self.bz = float(bz)
 
 
+class SolidBodyLoad(ElementLoad):
+    """Body force (bx, by, bz) per unit VOLUME in GLOBAL directions on a
+    3D solid element (self-weight: bz = -unit_weight). The element converts
+    it to consistent nodal loads with its own shape functions."""
+
+    def __init__(self, ele_tag: int, bx: float = 0.0, by: float = 0.0,
+                 bz: float = 0.0) -> None:
+        super().__init__(ele_tag)
+        self.bx = float(bx)
+        self.by = float(by)
+        self.bz = float(bz)
+
+
+class SolidFaceLoad(ElementLoad):
+    """Constant traction per unit AREA on one face of a 3D solid element.
+    face = local face index (Hex8: 0/1 = zeta-/+, 2/4 = eta-/+, 3/5 = xi+/-,
+    see solid._HEX_FACES; Tet4: face f is the triangle opposite local node
+    f). Components: (tx, ty, tz) in GLOBAL directions, plus `pressure`
+    along the face's outward normal with POSITIVE = pushing INWARD on the
+    element (classic pressure) — same sign convention as QuadEdgeLoad."""
+
+    def __init__(self, ele_tag: int, face: int, tx: float = 0.0,
+                 ty: float = 0.0, tz: float = 0.0,
+                 pressure: float = 0.0) -> None:
+        super().__init__(ele_tag)
+        self.face = int(face)
+        self.tx = float(tx)
+        self.ty = float(ty)
+        self.tz = float(tz)
+        self.pressure = float(pressure)
+
+
 class LoadPattern:
     def __init__(self, tag: int, time_series: TimeSeries) -> None:
         self.tag = int(tag)

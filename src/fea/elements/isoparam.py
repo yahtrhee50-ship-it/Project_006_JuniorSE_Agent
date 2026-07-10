@@ -140,3 +140,27 @@ def b_matrix_2d(dN_dx: np.ndarray) -> np.ndarray:
         B[2, 2 * a] = dN_dx[a, 1]
         B[2, 2 * a + 1] = dN_dx[a, 0]
     return B
+
+
+def b_matrix_3d(dN_dx: np.ndarray) -> np.ndarray:
+    """3D strain-displacement matrix, engineering (Voigt) strains
+    [eps_xx, eps_yy, eps_zz, gamma_xy, gamma_yz, gamma_zx] (the solid3d
+    NDMaterial order) from DOFs ordered [u1, v1, w1, u2, v2, w2, ...].
+
+    dN_dx : (n_nodes, 3) physical shape-function derivatives.
+    Returns B (6, 3*n_nodes).
+    """
+    n = dN_dx.shape[0]
+    B = np.zeros((6, 3 * n))
+    for a in range(n):
+        dx, dy, dz = dN_dx[a]
+        B[0, 3 * a] = dx
+        B[1, 3 * a + 1] = dy
+        B[2, 3 * a + 2] = dz
+        B[3, 3 * a] = dy
+        B[3, 3 * a + 1] = dx
+        B[4, 3 * a + 1] = dz
+        B[4, 3 * a + 2] = dy
+        B[5, 3 * a] = dz
+        B[5, 3 * a + 2] = dx
+    return B

@@ -33,13 +33,15 @@ from src.fea.elements.frame import Frame
 from src.fea.elements.frame3d import Frame3D
 from src.fea.elements.quad4 import Quad4
 from src.fea.elements.shell_mitc4 import ShellMITC4
+from src.fea.elements.solid import Hex8, Tet4
 from src.fea.elements.truss import Truss
 from src.fea.loads.pattern import (ConstantTimeSeries, FramePointLoad,
                                    FramePointLoad3D, FrameUniformLoad,
                                    FrameUniformLoad3D, LinearTimeSeries,
                                    LoadPattern, NodalLoad, QuadBodyLoad,
                                    QuadEdgeLoad, ShellBodyLoad,
-                                   ShellPressureLoad, TimeSeries,
+                                   ShellPressureLoad, SolidBodyLoad,
+                                   SolidFaceLoad, TimeSeries,
                                    TrussStrainLoad)
 from src.fea.materials.nd import ElasticIsotropic, NDMaterial
 from src.fea.materials.uniaxial import ElasticMaterial, UniaxialMaterial
@@ -180,6 +182,12 @@ class Model:
                 tag, node_tags, material=mat, t=props["t"],
                 drill_alpha=props.get("drill_alpha", 1.0e-3),
                 warp_tol=props.get("warp_tol", 0.05))
+        elif kind == "Hex8":
+            mat = self._nd_materials[props["mat"]]
+            elem = Hex8(tag, node_tags, material=mat)
+        elif kind == "Tet4":
+            mat = self._nd_materials[props["mat"]]
+            elem = Tet4(tag, node_tags, material=mat)
         else:
             raise ValueError(f"Unknown element '{kind}'")
         self.domain.add_element(elem)
@@ -213,24 +221,40 @@ class Model:
                  Px: float = 0.0, Py: float = 0.0, Pz: float = 0.0,
                  distance_from_i: Optional[float] = None,
                  bx: float = 0.0, by: float = 0.0, bz: float = 0.0,
-                 edge: Optional[int] = None,
-                 tx: float = 0.0, ty: float = 0.0, pressure: float = 0.0,
+                 edge: Optional[int] = None, face: Optional[int] = None,
+                 tx: float = 0.0, ty: float = 0.0, tz: float = 0.0,
+                 pressure: float = 0.0,
                  pattern: Optional[int] = None) -> None:
         """Truss initial-strain load (delta_L0 / delta_T*alpha), Frame
         load (uniform wx/wy, or point Px/Py at distance_from_i; Frame3D
         adds wz/Pz), Quad4 load (body force bx/by per unit volume, or
         edge traction on local edge index `edge`: global tx/ty per unit
         area and/or `pressure` along the outward normal, + = pushing
-        inward), or ShellMITC4 load (`pressure` per unit area along the
+        inward), ShellMITC4 load (`pressure` per unit area along the
         LOCAL +z normal, + = along the normal, and/or body force
-        bx/by/bz per unit volume, e.g. self-weight bz=-unit_weight) —
-        nodal quantities in GLOBAL components."""
+        bx/by/bz per unit volume, e.g. self-weight bz=-unit_weight), or
+        Hex8/Tet4 solid load (body force bx/by/bz per unit volume, or
+        face traction on local face index `face`: global tx/ty/tz per
+        unit area and/or `pressure` along the outward normal, + =
+        pushing inward) — nodal quantities in GLOBAL components."""
         elem = self.domain.get_element(ele_tag)
         p = (self.domain.get_load_pattern(pattern) if pattern is not None
              else self._current_pattern)
         if p is None:
             raise ValueError("No load pattern defined — call pattern() first")
-        if isinstance(elem, ShellMITC4):
+        if isinstance(elem, (Hex8, Tet4)):
+            if face is not None:
+                p.add_element_load(SolidFaceLoad(
+                    ele_tag, face=face, tx=tx, ty=ty, tz=tz,
+                    pressure=pressure))
+            elif bx or by or bz:
+                p.add_element_load(SolidBodyLoad(ele_tag, bx=bx, by=by, bz=bz))
+            else:
+                raise ValueError(
+                    f"ele_load({ele_tag}): a solid takes a bx/by/bz body "
+                    f"force and/or a face traction (face= with tx/ty/tz "
+                    f"and/or pressure)")
+        elif isinstance(elem, ShellMITC4):
             if pressure:
                 p.add_element_load(ShellPressureLoad(ele_tag, p=pressure))
             if bx or by or bz:
@@ -317,6 +341,19 @@ class Model:
         return self._emit_mesh(
             mesh, limits,
             lambda tag, conn: self.element("Quad4", tag, *conn, mat=mat, t=t))
+
+    def mesh_box(self, Lx: float, Ly: float, Lz: float,
+                 nx: int, ny: int, nz: int, *, mat: int,
+                 x0: float = 0.0, y0: float = 0.0, z0: float = 0.0,
+                 first_node: int = 1, first_ele: int = 1,
+                 limits: Optional[dict] = None) -> "_mesh.Mesh":
+        """Structured Hex8 grid on an axis-aligned box (3D ndf>=3 nodes).
+        Face node groups: 'xmin'/'xmax'/'ymin'/'ymax'/'zmin'/'zmax'."""
+        mesh = _mesh.box_grid(Lx, Ly, Lz, nx, ny, nz, x0=x0, y0=y0, z0=z0,
+                              first_node=first_node, first_ele=first_ele)
+        return self._emit_mesh(
+            mesh, limits,
+            lambda tag, conn: self.element("Hex8", tag, *conn, mat=mat))
 
     def stitch_edge(self, coarse_tags, fine_tags, *,
                     dofs=(0, 1), tol: float = 1e-8) -> int:
