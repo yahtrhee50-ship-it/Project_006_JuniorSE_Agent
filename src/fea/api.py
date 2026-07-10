@@ -30,10 +30,12 @@ import numpy as np
 from src.fea.analysis_model import AnalysisModel
 from src.fea.domain import Domain, Node
 from src.fea.elements.frame import Frame
+from src.fea.elements.frame3d import Frame3D
 from src.fea.elements.quad4 import Quad4
 from src.fea.elements.truss import Truss
 from src.fea.loads.pattern import (ConstantTimeSeries, FramePointLoad,
-                                   FrameUniformLoad, LinearTimeSeries,
+                                   FramePointLoad3D, FrameUniformLoad,
+                                   FrameUniformLoad3D, LinearTimeSeries,
                                    LoadPattern, NodalLoad, QuadBodyLoad,
                                    QuadEdgeLoad, TimeSeries, TrussStrainLoad)
 from src.fea.materials.nd import ElasticIsotropic, NDMaterial
@@ -154,6 +156,18 @@ class Model:
                          release_j=props.get("release_j", False),
                          offset_i=props.get("offset_i", (0.0, 0.0)),
                          offset_j=props.get("offset_j", (0.0, 0.0)))
+        elif kind == "Frame3D":
+            sec = self._sections[props["section"]]
+            if "vecxz" not in props:
+                raise ValueError(
+                    f"element Frame3D {tag}: vecxz orientation vector is "
+                    f"required (a vector in the local x-z plane, OpenSees "
+                    f"geomTransf convention)")
+            elem = Frame3D(tag, node_tags, section=sec, vecxz=props["vecxz"],
+                           release_i=props.get("release_i", False),
+                           release_j=props.get("release_j", False),
+                           offset_i=props.get("offset_i", (0.0, 0.0, 0.0)),
+                           offset_j=props.get("offset_j", (0.0, 0.0, 0.0)))
         elif kind == "Quad4":
             mat = self._nd_materials[props["mat"]]
             elem = Quad4(tag, node_tags, material=mat, t=props["t"])
@@ -186,25 +200,37 @@ class Model:
 
     def ele_load(self, ele_tag: int, *, delta_L0: float = 0.0,
                  delta_T: float = 0.0, alpha: float = 0.0,
-                 wx: float = 0.0, wy: float = 0.0,
-                 Px: float = 0.0, Py: float = 0.0,
+                 wx: float = 0.0, wy: float = 0.0, wz: float = 0.0,
+                 Px: float = 0.0, Py: float = 0.0, Pz: float = 0.0,
                  distance_from_i: Optional[float] = None,
                  bx: float = 0.0, by: float = 0.0,
                  edge: Optional[int] = None,
                  tx: float = 0.0, ty: float = 0.0, pressure: float = 0.0,
                  pattern: Optional[int] = None) -> None:
         """Truss initial-strain load (delta_L0 / delta_T*alpha), Frame
-        load (uniform wx/wy, or point Px/Py at distance_from_i), or Quad4
-        load (body force bx/by per unit volume, or edge traction on local
-        edge index `edge`: global tx/ty per unit area and/or `pressure`
-        along the outward normal, + = pushing inward) — all in GLOBAL
-        components."""
+        load (uniform wx/wy, or point Px/Py at distance_from_i; Frame3D
+        adds wz/Pz), or Quad4 load (body force bx/by per unit volume, or
+        edge traction on local edge index `edge`: global tx/ty per unit
+        area and/or `pressure` along the outward normal, + = pushing
+        inward) — all in GLOBAL components."""
         elem = self.domain.get_element(ele_tag)
         p = (self.domain.get_load_pattern(pattern) if pattern is not None
              else self._current_pattern)
         if p is None:
             raise ValueError("No load pattern defined — call pattern() first")
-        if isinstance(elem, Frame):
+        if isinstance(elem, Frame3D):
+            if distance_from_i is not None:
+                p.add_element_load(FramePointLoad3D(
+                    ele_tag, Px=Px, Py=Py, Pz=Pz,
+                    distance_from_i=distance_from_i))
+            else:
+                p.add_element_load(FrameUniformLoad3D(ele_tag, wx=wx, wy=wy,
+                                                      wz=wz))
+        elif isinstance(elem, Frame):
+            if wz or Pz:
+                raise ValueError(
+                    f"ele_load({ele_tag}): wz/Pz need a Frame3D element "
+                    f"(this is a 2D Frame)")
             if distance_from_i is not None:
                 p.add_element_load(FramePointLoad(
                     ele_tag, Px=Px, Py=Py, distance_from_i=distance_from_i))

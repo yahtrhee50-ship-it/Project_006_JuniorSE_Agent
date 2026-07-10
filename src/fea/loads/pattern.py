@@ -90,6 +90,33 @@ class FramePointLoad(ElementLoad):
         self.distance_from_i = float(distance_from_i)
 
 
+class FrameUniformLoad3D(ElementLoad):
+    """Uniform load per unit length (wx, wy, wz) in GLOBAL directions, over
+    the full length of a Frame3D element. The element projects these onto
+    its own local axial/transverse directions."""
+
+    def __init__(self, ele_tag: int, wx: float = 0.0, wy: float = 0.0,
+                 wz: float = 0.0) -> None:
+        super().__init__(ele_tag)
+        self.wx = float(wx)
+        self.wy = float(wy)
+        self.wz = float(wz)
+
+
+class FramePointLoad3D(ElementLoad):
+    """Point load (Px, Py, Pz) in GLOBAL directions at distance_from_i along
+    a Frame3D element's axis. The element projects these onto its own local
+    axial/transverse directions."""
+
+    def __init__(self, ele_tag: int, Px: float = 0.0, Py: float = 0.0,
+                 Pz: float = 0.0, distance_from_i: float = 0.0) -> None:
+        super().__init__(ele_tag)
+        self.Px = float(Px)
+        self.Py = float(Py)
+        self.Pz = float(Pz)
+        self.distance_from_i = float(distance_from_i)
+
+
 class QuadBodyLoad(ElementLoad):
     """Body force (bx, by) per unit VOLUME in GLOBAL directions on a 2D
     continuum element (e.g. self-weight by = -unit_weight). The element

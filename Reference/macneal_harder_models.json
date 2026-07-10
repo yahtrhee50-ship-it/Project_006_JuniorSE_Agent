@@ -6,7 +6,7 @@
     "Altair OptiStruct verification OS-V:0710 Curved Cantilever Beam (targets 0.08734 in-plane / 0.5022 out-of-plane)"
   ],
   "units": "consistent unit system (dimensionless per the paper; treat as in / lb / psi)",
-  "note": "Targets are the paper's theoretical values and INCLUDE shear deformation. A Bernoulli (Euler) frame element intentionally omits shear deformation: expected converged ratios vs target are 1.0000 (extension), 0.9991 (straight in-plane), ~1.014 (curved in-plane, target also reflects curved/thick-beam theory).",
+  "note": "Targets are the paper's theoretical values and INCLUDE shear deformation. A Bernoulli (Euler) frame element intentionally omits shear deformation: expected converged ratios vs target are 1.0000 (extension), 0.9991 (straight in-plane), ~1.014 (curved in-plane, target also reflects curved/thick-beam theory). 3D cases (out-of-plane + twist) run with the Frame3D element as of FEA Phase 2 Step 4: expected ratios 0.99977 (straight out-of-plane), 0.99654 (curved out-of-plane, both with exact St-Venant J), and 1.0632 for twist — see the twist case's J_provenance note.",
   "models": [
     {
       "id": "MH-SC",
@@ -17,7 +17,9 @@
         "depth_out_of_plane": 0.1,
         "A": 0.02,
         "I_in_plane": 6.6666666667e-05,
-        "I_out_of_plane": 1.6666666667e-05
+        "I_out_of_plane": 1.6666666667e-05,
+        "J_st_venant_exact": 4.573634e-05,
+        "J_note": "Exact St-Venant series for the 0.2 x 0.1 solid rectangle: J = (16/3)ab^3[1 - (192/pi^5)(b/a) sum_odd tanh(n pi a/2b)/n^5], a=0.1, b=0.05 (half-widths)."
       },
       "material": { "E": 10000000.0, "nu": 0.3 },
       "support": "fully fixed at x=0, free at x=6.0",
@@ -41,14 +43,18 @@
           "load": "unit transverse force at tip, out of plane",
           "target_tip_displacement": 0.4321,
           "runnable_2d": false,
-          "deferred_until": "3D frame element (path A/C)"
+          "runnable_3d": true,
+          "closed_form": "PL^3/3EI = 0.43200 (bending only, I=1.6667e-5); target incl. shear deformation = 0.4321, expected Bernoulli ratio 0.99977"
         },
         {
           "case": "twist",
           "load": "unit torque at tip",
           "target_tip_rotation": 0.03208,
           "runnable_2d": false,
-          "deferred_until": "3D frame element with torsion (path A/C)"
+          "runnable_3d": true,
+          "closed_form": "theta = TL/GJ; with exact St-Venant J = 4.573634e-5 and G = E/2.6 = 3.846154e6, theta = 0.0341085 (ratio 1.0632 vs target)",
+          "J_implied_by_target": 4.862843e-05,
+          "J_provenance": "UNRESOLVED (2026-07-09): the paper's 0.03208 target implies J = TL/(G*theta) = 4.8628e-5, which matches no standard formula for the 0.2 x 0.1 rectangle (exact series 4.5736e-5, thin-plate w/ end correction 4.5775e-5). Altair OS-V:0720 states the target without a J. Element verified exact TL/GJ for both J inputs; engineer may check the original 1985 paper if the 6.3% gap matters."
         }
       ]
     },
@@ -63,7 +69,9 @@
         "radial_depth_in_plane": 0.2,
         "thickness_out_of_plane": 0.1,
         "A": 0.02,
-        "I_in_plane": 6.6666666667e-05
+        "I_in_plane": 6.6666666667e-05,
+        "I_out_of_plane": 1.6666666667e-05,
+        "J_st_venant_exact": 4.573634e-05
       },
       "material": { "E": 10000000.0, "nu": 0.25 },
       "support": "fully fixed at one end, free at the other",
@@ -80,7 +88,8 @@
           "load": "unit force at tip, out of plane",
           "target_tip_displacement_in_load_dir": 0.5022,
           "runnable_2d": false,
-          "deferred_until": "3D frame element with torsion (path A/C)"
+          "runnable_3d": true,
+          "closed_form": "Bernoulli bending+torsion converged limit = R^3[(pi/4)/EI_oop + (3pi/4 - 2)/GJ] = 0.500463 with exact J = 4.573634e-5, G = E/2.5 = 4e6; ratio 0.99654 vs target (target adds shear deformation)"
         }
       ]
     }
