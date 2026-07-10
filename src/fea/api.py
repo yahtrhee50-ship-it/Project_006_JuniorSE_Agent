@@ -32,12 +32,15 @@ from src.fea.domain import Domain, Node
 from src.fea.elements.frame import Frame
 from src.fea.elements.frame3d import Frame3D
 from src.fea.elements.quad4 import Quad4
+from src.fea.elements.shell_mitc4 import ShellMITC4
 from src.fea.elements.truss import Truss
 from src.fea.loads.pattern import (ConstantTimeSeries, FramePointLoad,
                                    FramePointLoad3D, FrameUniformLoad,
                                    FrameUniformLoad3D, LinearTimeSeries,
                                    LoadPattern, NodalLoad, QuadBodyLoad,
-                                   QuadEdgeLoad, TimeSeries, TrussStrainLoad)
+                                   QuadEdgeLoad, ShellBodyLoad,
+                                   ShellPressureLoad, TimeSeries,
+                                   TrussStrainLoad)
 from src.fea.materials.nd import ElasticIsotropic, NDMaterial
 from src.fea.materials.uniaxial import ElasticMaterial, UniaxialMaterial
 from src.fea.numberer import PlainNumberer, RCMNumberer
@@ -171,6 +174,12 @@ class Model:
         elif kind == "Quad4":
             mat = self._nd_materials[props["mat"]]
             elem = Quad4(tag, node_tags, material=mat, t=props["t"])
+        elif kind == "ShellMITC4":
+            mat = self._nd_materials[props["mat"]]
+            elem = ShellMITC4(
+                tag, node_tags, material=mat, t=props["t"],
+                drill_alpha=props.get("drill_alpha", 1.0e-3),
+                warp_tol=props.get("warp_tol", 0.05))
         else:
             raise ValueError(f"Unknown element '{kind}'")
         self.domain.add_element(elem)
@@ -203,22 +212,34 @@ class Model:
                  wx: float = 0.0, wy: float = 0.0, wz: float = 0.0,
                  Px: float = 0.0, Py: float = 0.0, Pz: float = 0.0,
                  distance_from_i: Optional[float] = None,
-                 bx: float = 0.0, by: float = 0.0,
+                 bx: float = 0.0, by: float = 0.0, bz: float = 0.0,
                  edge: Optional[int] = None,
                  tx: float = 0.0, ty: float = 0.0, pressure: float = 0.0,
                  pattern: Optional[int] = None) -> None:
         """Truss initial-strain load (delta_L0 / delta_T*alpha), Frame
         load (uniform wx/wy, or point Px/Py at distance_from_i; Frame3D
-        adds wz/Pz), or Quad4 load (body force bx/by per unit volume, or
+        adds wz/Pz), Quad4 load (body force bx/by per unit volume, or
         edge traction on local edge index `edge`: global tx/ty per unit
         area and/or `pressure` along the outward normal, + = pushing
-        inward) — all in GLOBAL components."""
+        inward), or ShellMITC4 load (`pressure` per unit area along the
+        LOCAL +z normal, + = along the normal, and/or body force
+        bx/by/bz per unit volume, e.g. self-weight bz=-unit_weight) —
+        nodal quantities in GLOBAL components."""
         elem = self.domain.get_element(ele_tag)
         p = (self.domain.get_load_pattern(pattern) if pattern is not None
              else self._current_pattern)
         if p is None:
             raise ValueError("No load pattern defined — call pattern() first")
-        if isinstance(elem, Frame3D):
+        if isinstance(elem, ShellMITC4):
+            if pressure:
+                p.add_element_load(ShellPressureLoad(ele_tag, p=pressure))
+            if bx or by or bz:
+                p.add_element_load(ShellBodyLoad(ele_tag, bx=bx, by=by, bz=bz))
+            if not pressure and not (bx or by or bz):
+                raise ValueError(
+                    f"ele_load({ele_tag}): a ShellMITC4 takes `pressure` "
+                    f"and/or a bx/by/bz body force")
+        elif isinstance(elem, Frame3D):
             if distance_from_i is not None:
                 p.add_element_load(FramePointLoad3D(
                     ele_tag, Px=Px, Py=Py, Pz=Pz,

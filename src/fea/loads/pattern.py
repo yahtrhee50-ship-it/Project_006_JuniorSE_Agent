@@ -146,6 +146,29 @@ class QuadEdgeLoad(ElementLoad):
         self.pressure = float(pressure)
 
 
+class ShellPressureLoad(ElementLoad):
+    """Uniform pressure per unit AREA on a shell element, acting along the
+    element's LOCAL +z normal (CCW node order defines +z). Use a negative
+    p for load against the normal (e.g. gravity on a floor whose +z is up)."""
+
+    def __init__(self, ele_tag: int, p: float) -> None:
+        super().__init__(ele_tag)
+        self.p = float(p)
+
+
+class ShellBodyLoad(ElementLoad):
+    """Body force (bx, by, bz) per unit VOLUME in GLOBAL directions on a
+    shell element (self-weight: bz = -unit_weight). The element multiplies
+    by its thickness and integrates over the mid-surface."""
+
+    def __init__(self, ele_tag: int, bx: float = 0.0, by: float = 0.0,
+                 bz: float = 0.0) -> None:
+        super().__init__(ele_tag)
+        self.bx = float(bx)
+        self.by = float(by)
+        self.bz = float(bz)
+
+
 class LoadPattern:
     def __init__(self, tag: int, time_series: TimeSeries) -> None:
         self.tag = int(tag)
