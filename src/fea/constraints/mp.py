@@ -52,6 +52,73 @@ class MP_Constraint:
                 f"match {len(self.constrained_dofs)} constrained x "
                 f"{len(self.retained_dofs)} retained dofs")
 
+    @property
+    def terms(self) -> Tuple[Tuple[int, Tuple[int, ...], np.ndarray], ...]:
+        """(retained_tag, retained_dofs, matrix) triples — the general
+        multi-retained form AnalysisModel resolves against."""
+        return ((self.retained_tag, self.retained_dofs, self.matrix),)
+
+
+class MP_ConstraintMulti:
+    """Linear MP over SEVERAL retained nodes:
+
+        u_c[constrained_dofs] = sum_k  C_k @ u_rk[retained_dofs_k]
+
+    (the single-retained MP_Constraint is the one-term special case). The
+    canonical use is a mesh hanging node slaved to linear interpolation of
+    the two end nodes of the coarse edge it sits on (Step 3 edge stitching).
+    """
+
+    def __init__(self, constrained_tag: int,
+                 constrained_dofs: Sequence[int],
+                 terms: Sequence[Tuple[int, Sequence[int], "np.ndarray"]]
+                 ) -> None:
+        self.constrained_tag = int(constrained_tag)
+        self.constrained_dofs: Tuple[int, ...] = tuple(
+            int(d) for d in constrained_dofs)
+        if not terms:
+            raise ValueError("MP multi constraint: give at least one "
+                             "(retained_tag, retained_dofs, matrix) term")
+        packed = []
+        seen = set()
+        for rtag, rdofs, mat in terms:
+            rtag = int(rtag)
+            rdofs = tuple(int(d) for d in rdofs)
+            mat = np.asarray(mat, dtype=float)
+            if rtag == self.constrained_tag:
+                raise ValueError("MP multi constraint: retained and "
+                                 "constrained node must differ")
+            if rtag in seen:
+                raise ValueError(
+                    f"MP multi constraint: retained node {rtag} appears in "
+                    f"more than one term — merge the matrices")
+            seen.add(rtag)
+            if mat.shape != (len(self.constrained_dofs), len(rdofs)):
+                raise ValueError(
+                    f"MP multi constraint matrix shape {mat.shape} does not "
+                    f"match {len(self.constrained_dofs)} constrained x "
+                    f"{len(rdofs)} retained dofs")
+            packed.append((rtag, rdofs, mat))
+        self._terms: Tuple = tuple(packed)
+
+    @property
+    def terms(self) -> Tuple[Tuple[int, Tuple[int, ...], np.ndarray], ...]:
+        return self._terms
+
+
+def hanging_node(retained_a: int, retained_b: int, constrained_tag: int,
+                 dofs: Sequence[int], s: float) -> MP_ConstraintMulti:
+    """Hanging node at parameter s in [0, 1] along the straight edge from
+    retained node a (s=0) to b (s=1):  u_c = (1-s) u_a + s u_b per dof.
+    Exact interface compatibility for elements with linear edges (Q4)."""
+    if not 0.0 <= s <= 1.0:
+        raise ValueError(f"hanging_node: s={s} must be in [0, 1]")
+    dofs = tuple(dofs)
+    eye = np.eye(len(dofs))
+    return MP_ConstraintMulti(constrained_tag, dofs,
+                              [(retained_a, dofs, (1.0 - s) * eye),
+                               (retained_b, dofs, s * eye)])
+
 
 def equal_dof(retained_tag: int, constrained_tag: int,
               dofs: Sequence[int]) -> MP_Constraint:

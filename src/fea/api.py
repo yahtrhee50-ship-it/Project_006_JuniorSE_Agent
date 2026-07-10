@@ -46,6 +46,7 @@ from src.fea.analysis.static_analysis import StaticAnalysis
 from src.fea.constraints.sp import SP_Constraint
 from src.fea.constraints.mp import (TransformationHandler, equal_dof,
                                     rigid_link)
+from src.fea import mesh as _mesh
 
 
 class Model:
@@ -218,6 +219,72 @@ class Model:
         else:
             p.add_element_load(TrussStrainLoad(ele_tag, delta_L0=delta_L0,
                                                delta_T=delta_T, alpha=alpha))
+
+    # -- meshing (Phase 2 step 3) --------------------------------------------
+
+    def _emit_mesh(self, mesh: "_mesh.Mesh", limits: Optional[dict],
+                   make_element) -> "_mesh.Mesh":
+        """Quality-gate the mesh, THEN emit nodes + elements into the
+        domain (a failing mesh adds nothing). Returns the Mesh so callers
+        can use its groups/sides for supports and loads."""
+        _mesh.check_quality(mesh, **(limits or {}))
+        for tag, coords in mesh.nodes.items():
+            self.node(tag, *coords)
+        for tag, conn in mesh.elements.items():
+            make_element(tag, conn)
+        return mesh
+
+    def mesh_line(self, p0, p1, n: int, *, section: int,
+                  first_node: int = 1, first_ele: int = 1,
+                  limits: Optional[dict] = None) -> "_mesh.Mesh":
+        """Straight line of n Frame elements (2D 3-DOF nodes)."""
+        mesh = _mesh.line_mesh(p0, p1, n, first_node=first_node,
+                               first_ele=first_ele)
+        return self._emit_mesh(
+            mesh, limits,
+            lambda tag, conn: self.element("Frame", tag, *conn,
+                                           section=section))
+
+    def mesh_rect(self, Lx: float, Ly: float, nx: int, ny: int, *,
+                  mat: int, t: float, x0: float = 0.0, y0: float = 0.0,
+                  first_node: int = 1, first_ele: int = 1,
+                  limits: Optional[dict] = None) -> "_mesh.Mesh":
+        """Structured Quad4 grid on an axis-aligned rectangle."""
+        mesh = _mesh.rect_grid(Lx, Ly, nx, ny, x0=x0, y0=y0,
+                               first_node=first_node, first_ele=first_ele)
+        return self._emit_mesh(
+            mesh, limits,
+            lambda tag, conn: self.element("Quad4", tag, *conn, mat=mat, t=t))
+
+    def mesh_transfinite(self, bottom, right, top, left,
+                         n_u: int, n_v: int, *, mat: int, t: float,
+                         grade_u=None, grade_v=None,
+                         first_node: int = 1, first_ele: int = 1,
+                         limits: Optional[dict] = None) -> "_mesh.Mesh":
+        """Mapped (Coons) Quad4 patch on four possibly-curved boundary
+        edges — see src.fea.mesh.transfinite_patch for conventions."""
+        mesh = _mesh.transfinite_patch(bottom, right, top, left, n_u, n_v,
+                                       grade_u=grade_u, grade_v=grade_v,
+                                       first_node=first_node,
+                                       first_ele=first_ele)
+        return self._emit_mesh(
+            mesh, limits,
+            lambda tag, conn: self.element("Quad4", tag, *conn, mat=mat, t=t))
+
+    def stitch_edge(self, coarse_tags, fine_tags, *,
+                    dofs=(0, 1), tol: float = 1e-8) -> int:
+        """Tie a fine mesh edge to a coarse one along a shared straight
+        interface (equal-DOF at coincident nodes, hanging-node MP
+        interpolation elsewhere). Returns the number of constraints added.
+        Approximation — keep tied interfaces away from regions of
+        interest."""
+        coords = {t: self.domain.get_node(t).coords
+                  for t in list(coarse_tags) + list(fine_tags)}
+        cons = _mesh.stitch_edge(coarse_tags, fine_tags, coords,
+                                 dofs=dofs, tol=tol)
+        for c in cons:
+            self.domain.add_mp_constraint(c)
+        return len(cons)
 
     # -- analysis -----------------------------------------------------------
 

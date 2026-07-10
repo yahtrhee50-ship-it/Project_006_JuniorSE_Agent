@@ -60,10 +60,11 @@ class AnalysisModel:
         self._constrained = dict(constrained)
 
         # -- hygiene checks on the MP set ---------------------------------
+        # An MP may couple its constrained node to SEVERAL retained nodes
+        # (mp.terms = (retained_tag, retained_dofs, matrix) triples, e.g. a
+        # mesh hanging node tied to both ends of the coarse edge).
         slaved: Dict[Tuple[int, int], Tuple] = {}   # (tag, dof) -> (mp, row)
-        retained_tags = set()
         for mp in mps:
-            retained_tags.add(mp.retained_tag)
             for row, dof in enumerate(mp.constrained_dofs):
                 key = (mp.constrained_tag, dof)
                 if key in slaved:
@@ -76,12 +77,12 @@ class AnalysisModel:
                         f"slaved (MP) and SP-constrained")
                 slaved[key] = (mp, row)
         for mp in mps:
-            if any((mp.retained_tag, d) in slaved
-                   for d in range(domain.get_node(mp.retained_tag).ndf)):
-                raise ValueError(
-                    f"Node {mp.retained_tag} is retained by one MP "
-                    f"constraint and slaved by another — chains are not "
-                    f"supported")
+            for rtag, _, _ in mp.terms:
+                if any((rtag, d) in slaved
+                       for d in range(domain.get_node(rtag).ndf)):
+                    raise ValueError(
+                        f"Node {rtag} is retained by one MP constraint and "
+                        f"slaved by another — chains are not supported")
             if domain.get_node(mp.constrained_tag).axes is not None:
                 raise ValueError(
                     f"Slaved node {mp.constrained_tag} has skew nodal axes "
@@ -121,18 +122,20 @@ class AnalysisModel:
                     continue
                 is_slaved_node = True
                 mp, row = slaved[key]
-                r_res = self._res[mp.retained_tag]
-                for col, rdof in enumerate(mp.retained_dofs):
-                    c = mp.matrix[row, col]
-                    if c == 0.0:
-                        continue
-                    # retained node's GLOBAL component rdof: g + T[rdof,:]@u
-                    g[dof] += c * r_res.g[rdof]
-                    for k, eq in enumerate(r_res.idx):
-                        coeff = c * r_res.T[rdof, k]
-                        if coeff != 0.0:
-                            rows_terms[dof][int(eq)] = (
-                                rows_terms[dof].get(int(eq), 0.0) + coeff)
+                for rtag, rdofs, mat in mp.terms:
+                    r_res = self._res[rtag]
+                    for col, rdof in enumerate(rdofs):
+                        c = mat[row, col]
+                        if c == 0.0:
+                            continue
+                        # retained node's GLOBAL component rdof:
+                        # g + T[rdof,:] @ u
+                        g[dof] += c * r_res.g[rdof]
+                        for k, eq in enumerate(r_res.idx):
+                            coeff = c * r_res.T[rdof, k]
+                            if coeff != 0.0:
+                                rows_terms[dof][int(eq)] = (
+                                    rows_terms[dof].get(int(eq), 0.0) + coeff)
             if not is_slaved_node:
                 continue
             # non-slaved DOFs of this node resolve on their own slots

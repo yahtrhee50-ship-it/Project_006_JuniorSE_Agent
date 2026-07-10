@@ -199,6 +199,44 @@ def continuous_beam(spans: Sequence[float], E: float, A: float, I: float,
                      {t: (x, 0.0) for t, x in zip(nodes, xs)})
 
 
+def wall(width: float, height: float, t: float, E: float, nu: float,
+         nx: int = 8, ny: int = 8, gravity_weight: float = 0.0,
+         lateral_top: float = 0.0, formulation: str = "plane_stress",
+         mesh_limits: dict = None) -> Archetype:
+    """In-plane wall / deep-beam panel: structured Quad4 grid (Phase 2
+    step 3 mesher), base fully fixed, optional loads in pattern 1:
+
+    gravity_weight : unit weight (force/volume), applied as body force -y.
+    lateral_top    : TOTAL in-plane shear at the top edge (+x), applied as
+                     constant edge traction across the top.
+
+    Key nodes: 'base_left', 'base_right', 'top_left', 'top_right',
+    'top_mid'. (Out-of-plane slab bending needs the MITC4 shell — Step 5.)
+    """
+    if width <= 0 or height <= 0 or t <= 0:
+        raise ValueError("wall: width, height and t must be positive")
+    m = Model(ndm=2, ndf=2)
+    m.nd_material("ElasticIsotropic", 1, E=E, nu=nu, formulation=formulation)
+    mesh = m.mesh_rect(width, height, nx, ny, mat=1, t=t,
+                       limits=mesh_limits)
+    for tag in mesh.groups["bottom"]:
+        m.fix(tag, 1, 1)
+    m.pattern("Plain", 1, "Linear")
+    if gravity_weight:
+        for tag in mesh.elements:
+            m.ele_load(tag, by=-gravity_weight)
+    if lateral_top:
+        tx = lateral_top / (width * t)          # total force -> traction
+        for ele, edge in mesh.sides["top"]:
+            m.ele_load(ele, edge=edge, tx=tx)
+    bottom, top = mesh.groups["bottom"], mesh.groups["top"]
+    key = {"base_left": bottom[0], "base_right": bottom[-1],
+           "top_left": top[0], "top_right": top[-1],
+           "top_mid": top[len(top) // 2]}
+    return Archetype(m, key, list(bottom), list(mesh.elements),
+                     {tag: tuple(c) for tag, c in mesh.nodes.items()})
+
+
 def portal_frame(width: float, height: float, E: float,
                  A_col: float, I_col: float, A_beam: float, I_beam: float,
                  n_ele_per_member: int = 4, fixed_base: bool = True,

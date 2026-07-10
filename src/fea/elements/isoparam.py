@@ -43,6 +43,37 @@ def shape_q4(xi: float, eta: float) -> Tuple[np.ndarray, np.ndarray]:
     return N, dN
 
 
+# H8 parent-cube corners: the Q4 CCW pattern at zeta = -1, then at +1.
+H8_CORNERS = np.array([
+    [-1.0, -1.0, -1.0],
+    [ 1.0, -1.0, -1.0],
+    [ 1.0,  1.0, -1.0],
+    [-1.0,  1.0, -1.0],
+    [-1.0, -1.0,  1.0],
+    [ 1.0, -1.0,  1.0],
+    [ 1.0,  1.0,  1.0],
+    [-1.0,  1.0,  1.0],
+])
+
+
+def shape_h8(xi: float, eta: float, zeta: float
+             ) -> Tuple[np.ndarray, np.ndarray]:
+    """Trilinear H8 shape functions on the parent cube.
+
+    Returns (N, dN_dxi): N is (8,), dN_dxi is (8, 3) with columns
+    [dN/dxi, dN/deta, dN/dzeta], rows in the corner order of H8_CORNERS.
+    """
+    xc = H8_CORNERS[:, 0]
+    ec = H8_CORNERS[:, 1]
+    zc = H8_CORNERS[:, 2]
+    N = 0.125 * (1.0 + xi * xc) * (1.0 + eta * ec) * (1.0 + zeta * zc)
+    dN = np.empty((8, 3))
+    dN[:, 0] = 0.125 * xc * (1.0 + eta * ec) * (1.0 + zeta * zc)
+    dN[:, 1] = 0.125 * ec * (1.0 + xi * xc) * (1.0 + zeta * zc)
+    dN[:, 2] = 0.125 * zc * (1.0 + xi * xc) * (1.0 + eta * ec)
+    return N, dN
+
+
 def gauss_1d(n: int) -> Tuple[np.ndarray, np.ndarray]:
     """Gauss-Legendre rule on [-1, 1]: (points, weights) for n = 1, 2, 3."""
     if n == 1:

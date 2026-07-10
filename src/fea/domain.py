@@ -124,13 +124,14 @@ class Domain:
         self._sp_constraints.append(sp)
 
     def add_mp_constraint(self, mp) -> None:
-        r = self.get_node(mp.retained_tag)
         c = self.get_node(mp.constrained_tag)
-        for dof in mp.retained_dofs:
-            if not 0 <= dof < r.ndf:
-                raise ValueError(
-                    f"MP constraint: retained dof {dof} out of range for "
-                    f"node {r.tag} (ndf={r.ndf})")
+        for rtag, rdofs, _ in mp.terms:
+            r = self.get_node(rtag)
+            for dof in rdofs:
+                if not 0 <= dof < r.ndf:
+                    raise ValueError(
+                        f"MP constraint: retained dof {dof} out of range for "
+                        f"node {r.tag} (ndf={r.ndf})")
         for dof in mp.constrained_dofs:
             if not 0 <= dof < c.ndf:
                 raise ValueError(
