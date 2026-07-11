@@ -292,7 +292,8 @@ def sap_list_load_cases() -> str:
 
 
 def sap_joint_reactions(cases: list[str] | None = None,
-                        joints: list[str] | None = None) -> str:
+                        joints: list[str] | None = None,
+                        multistep: str | None = None) -> str:
     """Support reactions (F1,F2,F3,M1,M2,M3) per joint per case/combo step.
 
     Current model units (kips / kip-ft for a kip_ft model). Without a joints
@@ -303,16 +304,20 @@ def sap_joint_reactions(cases: list[str] | None = None,
         cases: case/combo names to report; None = all load CASES.
         joints: ACTUAL SAP2000 joint names (see sap_find_joints); None = all
             restrained joints.
+        multistep: for multi-step static cases — "steps" (one row per step,
+            with step_num), "envelope" (Max/Min rows), or None (leave as is).
     """
     try:
-        payload = _op("joint_reactions", cases=cases, joints=joints)
+        payload = _op("joint_reactions", cases=cases, joints=joints,
+                      multistep=multistep)
     except SAPBridgeError as e:
         return f"SAP2000 BRIDGE ERROR: {e}"
     return _dump(payload)
 
 
 def sap_joint_displacements(cases: list[str] | None = None,
-                            joints: list[str] | None = None) -> str:
+                            joints: list[str] | None = None,
+                            multistep: str | None = None) -> str:
     """Joint displacements/rotations (U1,U2,U3,R1,R2,R3) per case/combo step.
 
     Current model units (ft / rad for a kip_ft model — multiply U by 12 for
@@ -322,16 +327,19 @@ def sap_joint_displacements(cases: list[str] | None = None,
         cases: case/combo names; None = all load CASES.
         joints: ACTUAL joint names; None = every joint (can be large — prefer
             targeted joints via sap_find_joints).
+        multistep: "steps" | "envelope" | None (multi-step static reporting).
     """
     try:
-        payload = _op("joint_displacements", cases=cases, joints=joints)
+        payload = _op("joint_displacements", cases=cases, joints=joints,
+                      multistep=multistep)
     except SAPBridgeError as e:
         return f"SAP2000 BRIDGE ERROR: {e}"
     return _dump(payload)
 
 
 def sap_frame_forces(cases: list[str] | None = None,
-                     frames: list[str] | None = None) -> str:
+                     frames: list[str] | None = None,
+                     multistep: str | None = None) -> str:
     """Frame internal forces (P,V2,V3,T,M2,M3) at output stations per case.
 
     Current model units (kips / kip-ft for a kip_ft model). Frame names are
@@ -341,15 +349,18 @@ def sap_frame_forces(cases: list[str] | None = None,
     Args:
         cases: case/combo names; None = all load CASES.
         frames: ACTUAL frame names; None = all frames.
+        multistep: "steps" | "envelope" | None (multi-step static reporting).
     """
     try:
-        payload = _op("frame_forces", cases=cases, frames=frames)
+        payload = _op("frame_forces", cases=cases, frames=frames,
+                      multistep=multistep)
     except SAPBridgeError as e:
         return f"SAP2000 BRIDGE ERROR: {e}"
     return _dump(payload)
 
 
-def sap_base_reactions(cases: list[str] | None = None) -> str:
+def sap_base_reactions(cases: list[str] | None = None,
+                       multistep: str | None = None) -> str:
     """Global base reaction totals (FX,FY,FZ,MX,MY,MZ) per case/combo step.
 
     The fastest statics sanity check: total FZ must equal total applied
@@ -357,9 +368,10 @@ def sap_base_reactions(cases: list[str] | None = None) -> str:
 
     Args:
         cases: case/combo names; None = all load CASES.
+        multistep: "steps" | "envelope" | None (multi-step static reporting).
     """
     try:
-        payload = _op("base_reactions", cases=cases)
+        payload = _op("base_reactions", cases=cases, multistep=multistep)
     except SAPBridgeError as e:
         return f"SAP2000 BRIDGE ERROR: {e}"
     return _dump(payload)
@@ -374,6 +386,54 @@ def sap_modal_periods() -> str:
     return _dump(payload)
 
 
+def sap_add_multistep_moving_load(vehicle: str, speed: float, duration: float,
+                                  lane: str = "LANE1",
+                                  pattern_name: str = "MSTEP",
+                                  case_name: str = "MSTEP1",
+                                  station: float = 0.0,
+                                  start_time: float = 0.0,
+                                  direction: str = "Forward",
+                                  disc: float = 1.0,
+                                  run_analysis: bool = False) -> str:
+    """Step a vehicle along a lane as a MULTI-STEP STATIC load case (one
+    static solution per time step) — distinct from the influence-line
+    envelope (MOVE1) that a moving-load build creates.
+
+    The vehicle (an existing general vehicle, e.g. "HS20-44" from a
+    moving-load build) enters `lane` with its LEAD AXLE at `station` (ft) at
+    `start_time` (s) and travels at `speed` (ft/s); a static step is solved
+    every `disc` seconds for `duration` seconds (steps = duration/disc + 1).
+    Results (frame forces, reactions, displacements) then report one row per
+    step — query them with the `case_name` case after running the analysis.
+
+    NOTE: the model must already be saved to a .sdb; the operation
+    round-trips the model file, dropping any unrun analysis results (pass
+    run_analysis=True to re-run immediately).
+
+    Args:
+        vehicle: existing general-vehicle name (see the build report).
+        speed: travel speed along the lane, ft/s (kip_ft model).
+        duration: total load duration in seconds.
+        lane: lane name (builder default "LANE1").
+        pattern_name / case_name: names for the new pattern and multistep case.
+        station: lead-axle start station on the lane, ft.
+        start_time: seconds before the vehicle starts moving.
+        direction: "Forward" (verified) or "Backward" (pass-through, verify).
+        disc: time-step size in seconds.
+        run_analysis: re-run the analysis after adding the case.
+    """
+    try:
+        payload = _op("add_multistep_moving_load", vehicle=vehicle,
+                      speed=speed, duration=duration, lane=lane,
+                      pattern_name=pattern_name, case_name=case_name,
+                      station=station, start_time=start_time,
+                      direction=direction, disc=disc,
+                      run_analysis=run_analysis)
+    except SAPBridgeError as e:
+        return f"SAP2000 BRIDGE ERROR: {e}"
+    return _dump(payload)
+
+
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
@@ -383,7 +443,7 @@ SAP_TOOLS = [
     sap_list_operations, sap_run_analysis, sap_find_joints, sap_add_columns,
     sap_define_load_combos, sap_list_load_cases, sap_joint_reactions,
     sap_joint_displacements, sap_frame_forces, sap_base_reactions,
-    sap_modal_periods,
+    sap_modal_periods, sap_add_multistep_moving_load,
 ]
 
 
