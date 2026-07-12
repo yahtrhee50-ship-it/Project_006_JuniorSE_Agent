@@ -48,9 +48,9 @@ from src.fea.materials.uniaxial import ElasticMaterial, UniaxialMaterial
 from src.fea.numberer import PlainNumberer, RCMNumberer
 from src.fea.sections.section import ElasticSection, Section
 from src.fea import combos as _combos
-from src.fea.system.soe import DenseSolver, LinearSOE, SparseSolver
+from src.fea.system.soe import LinearSOE
 from src.fea.analysis.static_analysis import StaticAnalysis
-from src.fea.constraints.sp import SP_Constraint
+from src.fea.constraints.sp import PlainHandler, SP_Constraint
 from src.fea.constraints.mp import (TransformationHandler, equal_dof,
                                     rigid_link)
 from src.fea import mesh as _mesh
@@ -69,7 +69,7 @@ class Model:
         self._nd_materials: Dict[int, NDMaterial] = {}
         self._sections: Dict[int, Section] = {}
         self._current_pattern: Optional[LoadPattern] = None
-        self._solver_name = "Dense"
+        self._solver_name = "Auto"
         self._numberer_name = "Plain"
         self._analysis_model: Optional[AnalysisModel] = None
 
@@ -373,10 +373,22 @@ class Model:
     # -- analysis -----------------------------------------------------------
 
     def system(self, name: str) -> None:
-        """'Dense' (numpy, default) or 'Sparse' (scipy, lazy import)."""
-        if name not in ("Dense", "Sparse"):
+        """'Auto' (default: dense below ~500 equations, scipy sparse
+        assembly + SuperLU above), 'Dense' (numpy), 'Sparse' (scipy triplet
+        assembly, factorize-once splu), or 'Cholmod' (scikit-sparse,
+        optional dependency)."""
+        if name not in ("Auto", "Dense", "Sparse", "Cholmod"):
             raise ValueError(f"Unknown system '{name}'")
         self._solver_name = name
+
+    def _make_soe(self) -> LinearSOE:
+        if self._solver_name == "Dense":
+            return LinearSOE(storage="dense")
+        if self._solver_name == "Sparse":
+            return LinearSOE(storage="sparse")
+        if self._solver_name == "Cholmod":
+            return LinearSOE(storage="sparse", backend="cholmod")
+        return LinearSOE(storage="auto")
 
     def numberer(self, name: str) -> None:
         """'Plain' (tag order, default) or 'RCM' (bandwidth-reducing)."""
@@ -385,31 +397,55 @@ class Model:
         self._numberer_name = name
 
     def analyze(self, num_steps: int = 1) -> None:
-        solver = SparseSolver() if self._solver_name == "Sparse" else DenseSolver()
         numberer = (RCMNumberer() if self._numberer_name == "RCM"
                     else PlainNumberer())
         handler = (TransformationHandler()
                    if self.domain.has_mp_constraints() else None)
         analysis = StaticAnalysis(self.domain, constraint_handler=handler,
-                                  numberer=numberer, soe=LinearSOE(solver))
+                                  numberer=numberer, soe=self._make_soe())
         self._analysis_model = analysis.analyze(num_steps)
 
     def analyze_cases(self, cases: Dict[str, "list[int] | int"]
                       ) -> Dict[str, _combos.CaseResults]:
         """Solve each load case (name -> pattern tag(s)) independently and
-        return frozen CaseResults per case. Each run starts from a wiped
-        response state; the model is left reset with all patterns active.
-        Combine with src.fea.combos.combine / envelope (linear analysis)."""
+        return frozen CaseResults per case. K is assembled and factorized
+        ONCE (linear model — the tangent is case-independent); each case
+        costs one RHS formation + back-substitution. Each run starts from a
+        wiped response state; the model is left reset with all patterns
+        active. Combine with src.fea.combos.combine / envelope (linear
+        analysis)."""
         if not cases:
             raise ValueError("analyze_cases: no cases given")
+        numberer = (RCMNumberer() if self._numberer_name == "RCM"
+                    else PlainNumberer())
+        handler = (TransformationHandler()
+                   if self.domain.has_mp_constraints() else PlainHandler())
+        soe = self._make_soe()
+        analysis = StaticAnalysis(self.domain, constraint_handler=handler,
+                                  numberer=numberer, soe=soe)
+        model, integrator = analysis.model, analysis.integrator
         results: Dict[str, _combos.CaseResults] = {}
         try:
+            self.domain.reset()
+            handler.handle(self.domain, model, numberer)
+            if model.num_eq == 0:
+                raise ValueError("All DOFs are constrained — nothing to solve.")
+            soe.set_size(model.num_eq)
+            integrator.form_tangent(self.domain, model, soe)
+            soe.factorize()
             for name, tags in cases.items():
                 tag_list = [tags] if isinstance(tags, int) else list(tags)
                 self.domain.reset()
+                model.reset_solution()
                 self.domain.set_active_patterns(tag_list)
-                self.analyze(1)
+                integrator.new_step(self.domain, model)
+                integrator.form_unbalance(self.domain, model, soe)
+                delta_u = soe.solve_rhs(soe.b)
+                model.update(self.domain, delta_u)
+                self.domain.commit()
+                model.compute_reactions(self.domain)
                 results[name] = _combos.snapshot(self.domain, name)
+            self._analysis_model = model
         finally:
             self.domain.set_active_patterns(None)
             self.domain.reset()

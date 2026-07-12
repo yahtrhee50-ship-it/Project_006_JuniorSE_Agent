@@ -285,6 +285,12 @@ class AnalysisModel:
         self._u += delta_u
         self._push_trials(domain)
 
+    def reset_solution(self) -> None:
+        """Zero the accumulated free-equation solution — used between
+        load-case runs that reuse this model's numbering (and a factorized
+        K) after a Domain.reset()."""
+        self._u[:] = 0.0
+
     def _push_trials(self, domain: Domain) -> None:
         for tag, res in self._res.items():
             disp = res.g.copy()

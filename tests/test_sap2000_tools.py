@@ -156,7 +156,7 @@ def test_all_tools_register_on_fastmcp():
     names = {t.name for t in asyncio.run(server.list_tools())}
     expected = {fn.__name__ for fn in st.SAP_TOOLS}
     assert expected <= names
-    assert len(expected) == 15
+    assert len(expected) == 16
 
 
 def test_mcp_server_module_registers_sap_tools():
